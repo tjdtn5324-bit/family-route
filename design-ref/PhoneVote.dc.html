@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>동승자 빠른 요청과 투표</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#7FB2FF}a:hover{color:#A9CCFF}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; padding: 24px 18px; display: flex; flex-direction: column; gap: 16px; background: #0B1220; color: #F2F5FA; font-family: 'Noto Sans KR', system-ui, sans-serif; overflow: hidden">
+  <div style="display: flex; align-items: center; gap: 12px">
+    <div style="width: 40px; height: 40px; border-radius: 50%; background: #FACC15; color: #0B1220; font-weight: 700; display: flex; align-items: center; justify-content: center">민</div>
+    <div style="display: flex; flex-direction: column"><span style="font-size: 17px; font-weight: 700">민준 · 뒷좌석</span><span style="font-size: 13px; color: #A7B3C6">다음 휴게소까지 14분</span></div>
+  </div>
+  <span style="font-size: 15px; font-weight: 700">지금 필요한 것</span>
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+    <button type="button" style="height: 76px; border: 2px solid #FACC15; border-radius: 16px; background: #2A2510; color: #FDE68A; font-family: inherit; font-size: 17px; font-weight: 700">화장실 급해요<br><span style="font-size: 12px; font-weight: 500">가까운 휴게소 자동 추가</span></button>
+    <button type="button" style="height: 76px; border: 1.5px solid #3A4862; border-radius: 16px; background: #131C2B; color: #F2F5FA; font-family: inherit; font-size: 17px; font-weight: 700">배고파요</button>
+    <button type="button" style="height: 76px; border: 1.5px solid #3A4862; border-radius: 16px; background: #131C2B; color: #F2F5FA; font-family: inherit; font-size: 17px; font-weight: 700">멀미 나요</button>
+    <button type="button" style="height: 76px; border: 1.5px solid #3A4862; border-radius: 16px; background: #131C2B; color: #F2F5FA; font-family: inherit; font-size: 17px; font-weight: 700">잠깐 쉬어요</button>
+  </div>
+  <span style="font-size: 15px; font-weight: 700">투표해 주세요</span>
+  <div style="background: #131C2B; border-radius: 16px; padding: 14px; display: flex; flex-direction: column; gap: 10px">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <div style="width: 32px; height: 32px; border-radius: 50%; background: #FF9F43; color: #0B1220; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">엄</div>
+      <div style="flex: 1; display: flex; flex-direction: column"><span style="font-size: 16px; font-weight: 700">대관령 양떼목장</span><span style="font-size: 13px; color: #FFB86B">+35분 · 여유시간 초과</span></div>
+    </div>
+    <div style="display: flex; gap: 8px">
+      <button type="button" style="flex: 1; height: 46px; border: none; border-radius: 12px; background: #3D8BFF; color: #FFFFFF; font-family: inherit; font-size: 15px; font-weight: 700">좋아요</button>
+      <button type="button" style="flex: 1; height: 46px; border: 1.5px solid #3A4862; border-radius: 12px; background: transparent; color: #F2F5FA; font-family: inherit; font-size: 15px; font-weight: 700">돌아올 때</button>
+      <button type="button" style="flex: 1; height: 46px; border: 1.5px solid #3A4862; border-radius: 12px; background: transparent; color: #F2F5FA; font-family: inherit; font-size: 15px; font-weight: 700">별로예요</button>
+    </div>
+  </div>
+  <div style="background: #131C2B; border-radius: 16px; padding: 14px; display: flex; align-items: center; gap: 10px">
+    <div style="width: 32px; height: 32px; border-radius: 50%; background: #2DD4BF; color: #0B1220; font-size: 14px; font-weight: 700; display: flex; align-items: center; justify-content: center">서</div>
+    <div style="flex: 1; display: flex; flex-direction: column"><span style="font-size: 16px; font-weight: 700">횡성 한우 식당</span><span style="font-size: 13px; color: #A7B3C6">+12분 · 나는 ‘좋아요’ 함</span></div>
+    <span style="font-size: 13px; color: #7FB2FF; font-weight: 700">아빠 확인 대기</span>
+  </div>
+  <div style="flex: 1"></div>
+  <span style="font-size: 15px; font-weight: 700">결정된 것</span>
+  <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: #D5DDEA">
+    <div style="display: flex; justify-content: space-between"><span>두물머리 카페 (엄마)</span><span style="color: #A7B3C6">코스 반영</span></div>
+    <div style="display: flex; justify-content: space-between"><span>홍천 휴게소 (내 요청)</span><span style="color: #A7B3C6">자동 추가</span></div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

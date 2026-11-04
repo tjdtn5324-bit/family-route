@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>정차 중 제안 비교</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#7FB2FF}a:hover{color:#A9CCFF}
+</style>
+</helmet>
+<div style="width: 1600px; height: 600px; display: flex; flex-direction: column; background: #0B1220; color: #F2F5FA; font-family: 'Noto Sans KR', system-ui, sans-serif; overflow: hidden">
+  <div style="height: 76px; box-sizing: border-box; padding: 0 28px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #26324A">
+    <div style="width: 40px; height: 40px; border-radius: 10px; background: #26324A; color: #F2F5FA; font-size: 22px; font-weight: 900; display: flex; align-items: center; justify-content: center">P</div>
+    <span style="font-size: 22px; font-weight: 700">정차 중 · 홍천 휴게소</span>
+    <span style="font-size: 18px; color: #A7B3C6">가족 제안 3건을 함께 정해요</span>
+    <div style="flex: 1"></div>
+    <span style="font-size: 16px; color: #A7B3C6">출발하면 이 화면은 요약으로 접혀요</span>
+  </div>
+  <div style="flex: 1; display: flex; gap: 20px; padding: 22px 28px; box-sizing: border-box">
+    <div style="flex: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+      <div style="background: #131C2B; border: 2px solid #3D8BFF; border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <div style="width: 40px; height: 40px; border-radius: 50%; background: #2DD4BF; color: #0B1220; font-weight: 700; display: flex; align-items: center; justify-content: center">서</div>
+          <span style="font-size: 16px; color: #A7B3C6">서연 제안</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 24px; font-weight: 900">횡성 한우 식당</span><span style="font-size: 15px; color: #A7B3C6">식당 · 영업 중</span></div>
+        <div style="display: flex; justify-content: space-between; font-size: 17px"><span style="color: #A7B3C6">우회</span><b>+12분</b></div>
+        <div style="display: flex; justify-content: space-between; font-size: 17px"><span style="color: #A7B3C6">도착</span><b>15:04</b></div>
+        <div style="display: flex; justify-content: space-between; align-items: center; font-size: 17px"><span style="color: #A7B3C6">가족 의견</span><span style="display: flex; gap: 6px"><span style="background: #FF9F43; color: #0B1220; border-radius: 999px; padding: 2px 10px; font-size: 14px; font-weight: 700">엄 찬성</span><span style="background: #FACC15; color: #0B1220; border-radius: 999px; padding: 2px 10px; font-size: 14px; font-weight: 700">민 찬성</span></span></div>
+        <div style="flex: 1"></div>
+        <button type="button" aria-pressed="true" style="height: 60px; border: none; border-radius: 14px; background: #3D8BFF; color: #FFFFFF; font-family: inherit; font-size: 19px; font-weight: 700; cursor: pointer">코스에 넣음 ✓</button>
+      </div>
+      <div style="background: #131C2B; border: 2px solid #26324A; border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <div style="width: 40px; height: 40px; border-radius: 50%; background: #FF9F43; color: #0B1220; font-weight: 700; display: flex; align-items: center; justify-content: center">엄</div>
+          <span style="font-size: 16px; color: #A7B3C6">엄마 제안</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 24px; font-weight: 900">대관령 양떼목장</span><span style="font-size: 15px; color: #A7B3C6">관광 · 체류 60분 예상</span></div>
+        <div style="display: flex; justify-content: space-between; font-size: 17px"><span style="color: #A7B3C6">우회</span><b>+35분</b></div>
+        <div style="display: flex; justify-content: space-between; font-size: 17px"><span style="color: #A7B3C6">도착</span><b>16:39</b></div>
+        <div style="background: #3A2A14; color: #FFCF94; border-radius: 10px; padding: 8px 12px; font-size: 15px">여유시간 30분을 넘겨요 · 돌아오는 길 추천</div>
+        <div style="flex: 1"></div>
+        <button type="button" aria-pressed="false" style="height: 60px; border: 1.5px solid #3A4862; border-radius: 14px; background: transparent; color: #F2F5FA; font-family: inherit; font-size: 19px; font-weight: 700; cursor: pointer">귀갓길로 미루기</button>
+      </div>
+      <div style="background: #131C2B; border: 2px solid #26324A; border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 12px">
+        <div style="display: flex; align-items: center; gap: 10px">
+          <div style="width: 40px; height: 40px; border-radius: 50%; background: #FACC15; color: #0B1220; font-weight: 700; display: flex; align-items: center; justify-content: center">민</div>
+          <span style="font-size: 16px; color: #A7B3C6">민준 제안</span>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 24px; font-weight: 900">강릉 중앙시장</span><span style="font-size: 15px; color: #A7B3C6">시장 · 목적지에서 3km</span></div>
+        <div style="display: flex; justify-content: space-between; font-size: 17px"><span style="color: #A7B3C6">우회</span><b>+0분</b></div>
+        <div style="display: flex; justify-content: space-between; font-size: 17px"><span style="color: #A7B3C6">도착</span><b>변화 없음</b></div>
+        <div style="background: #13283F; color: #BFD8FF; border-radius: 10px; padding: 8px 12px; font-size: 15px">목적지 근처라 도착 후 일정으로 넣을 수 있어요</div>
+        <div style="flex: 1"></div>
+        <button type="button" aria-pressed="false" style="height: 60px; border: 1.5px solid #3A4862; border-radius: 14px; background: transparent; color: #F2F5FA; font-family: inherit; font-size: 19px; font-weight: 700; cursor: pointer">도착 후 일정에 넣기</button>
+      </div>
+    </div>
+    <div style="width: 400px; flex: 0 0 400px; box-sizing: border-box; background: #131C2B; border-radius: 18px; padding: 22px; display: flex; flex-direction: column; gap: 14px">
+      <span style="font-size: 18px; font-weight: 700">이렇게 가면</span>
+      <div style="display: flex; align-items: baseline; gap: 12px"><span style="font-size: 42px; font-weight: 900">15:04</span><span style="font-size: 17px; color: #A7B3C6">원래 14:52 → +12분</span></div>
+      <div style="display: flex; flex-direction: column; gap: 8px">
+        <div style="display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #26324A">
+          <div style="width: 26.6%; background: #FF9F43"></div>
+          <div style="width: 20%; background: #FACC15"></div>
+          <div style="width: 40%; background: #2DD4BF"></div>
+        </div>
+        <span style="font-size: 15px; color: #A7B3C6">여유시간 30분 중 26분 사용 · 4분 남음</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 6px; font-size: 16px; color: #D5DDEA">
+        <span>① 홍천 휴게소 (지금)</span>
+        <span>② 횡성 한우 식당 · 50분 머묾</span>
+        <span>③ 강릉 경포해변 도착</span>
+      </div>
+      <div style="flex: 1"></div>
+      <button type="button" style="height: 70px; border: none; border-radius: 16px; background: #3D8BFF; color: #FFFFFF; font-family: inherit; font-size: 22px; font-weight: 700; cursor: pointer">이대로 출발</button>
+      <span style="font-size: 14px; color: #A7B3C6; text-align: center">결정 결과는 가족 폰에 바로 알려져요</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1600,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

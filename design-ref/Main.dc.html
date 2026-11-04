@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>주행 메인</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#7FB2FF}a:hover{color:#A9CCFF}
+</style>
+</helmet>
+<div style="width: 1600px; height: 600px; display: flex; flex-direction: column; background: #0B1220; color: #F2F5FA; font-family: 'Noto Sans KR', system-ui, sans-serif; overflow: hidden">
+  <div style="display: flex; height: 500px">
+    <div style="position: relative; flex: 1 1 auto; overflow: hidden">
+      <svg viewBox="0 0 1140 500" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%" aria-hidden="true">
+        <rect width="1140" height="500" fill="#0F1A2A"></rect>
+        <path d="M0 380 C200 340 320 440 520 395 S860 310 1140 350" stroke="#123049" stroke-width="44" fill="none"></path>
+        <path d="M0 120 L1140 200" stroke="#1B273C" stroke-width="5" fill="none"></path>
+        <path d="M300 0 L360 500" stroke="#1B273C" stroke-width="5" fill="none"></path>
+        <path d="M640 0 L600 500" stroke="#1B273C" stroke-width="5" fill="none"></path>
+        <path d="M0 260 C300 250 500 300 1140 270" stroke="#22304A" stroke-width="9" fill="none"></path>
+        <path d="M860 0 L980 500" stroke="#22304A" stroke-width="9" fill="none"></path>
+        <path d="M180 470 C260 380 300 300 420 260 S640 220 720 160 S900 90 1040 60" stroke="#0B1220" stroke-width="22" fill="none" stroke-linecap="round"></path>
+        <path d="M180 470 C260 380 300 300 420 260 S640 220 720 160 S900 90 1040 60" stroke="#3D8BFF" stroke-width="12" fill="none" stroke-linecap="round"></path>
+        <circle cx="420" cy="260" r="20" fill="#FF9F43" stroke="#0B1220" stroke-width="4"></circle>
+        <text x="420" y="266" text-anchor="middle" font-size="16" font-weight="700" fill="#0B1220">엄</text>
+        <circle cx="720" cy="160" r="20" fill="#FACC15" stroke="#0B1220" stroke-width="4"></circle>
+        <text x="720" y="166" text-anchor="middle" font-size="16" font-weight="700" fill="#0B1220">민</text>
+        <circle cx="900" cy="96" r="20" fill="#0B1220" stroke="#2DD4BF" stroke-width="4" stroke-dasharray="5 4"></circle>
+        <text x="900" y="102" text-anchor="middle" font-size="16" font-weight="700" fill="#2DD4BF">서</text>
+        <rect x="1028" y="40" width="26" height="26" rx="6" fill="#F2F5FA"></rect>
+        <circle cx="236" cy="404" r="26" fill="#3D8BFF" opacity="0.25"></circle>
+        <path d="M236 386 L250 418 L236 410 L222 418 Z" fill="#F2F5FA"></path>
+      </svg>
+      <div style="position: absolute; left: 24px; top: 24px; display: flex; align-items: center; gap: 18px; background: #131C2B; border-radius: 18px; padding: 16px 24px 16px 16px">
+        <div style="width: 68px; height: 68px; border-radius: 14px; background: #3D8BFF; display: flex; align-items: center; justify-content: center">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 21V11a4 4 0 0 1 4-4h8"></path><path d="M15 3l4 4-4 4"></path></svg>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 2px">
+          <div style="font-size: 36px; font-weight: 900; line-height: 1.1">1.2km</div>
+          <div style="font-size: 18px; color: #A7B3C6">서울양양고속도로 방면 우측</div>
+        </div>
+      </div>
+      <div style="position: absolute; right: 20px; top: 24px; display: flex; align-items: center; gap: 8px; background: #131C2B; border-radius: 999px; padding: 10px 16px; font-size: 16px; color: #D5DDEA">
+        <span style="width: 10px; height: 10px; border-radius: 50%; background: #34D399"></span>가족 4명 연결됨
+      </div>
+      <div style="position: absolute; left: 24px; bottom: 20px; background: #131C2B; border-radius: 12px; padding: 8px 14px; font-size: 16px; color: #D5DDEA">경춘로 · 80</div>
+    </div>
+    <div style="width: 470px; flex: 0 0 470px; box-sizing: border-box; background: #131C2B; padding: 22px 24px; display: flex; flex-direction: column; gap: 14px">
+      <div style="display: flex; align-items: flex-end; justify-content: space-between">
+        <div style="display: flex; flex-direction: column">
+          <div style="font-size: 15px; color: #A7B3C6">강릉 경포해변 도착</div>
+          <div style="font-size: 44px; font-weight: 900; line-height: 1.1">14:52</div>
+        </div>
+        <div style="font-size: 17px; color: #A7B3C6; text-align: right">1시간 48분<br>132km</div>
+      </div>
+      <div style="background: #1A2537; border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; justify-content: space-between; font-size: 16px">
+          <span style="font-weight: 700">가족 여유시간</span>
+          <span style="color: #D5DDEA">30분 중 <b>14분</b> 사용</span>
+        </div>
+        <div style="display: flex; height: 14px; border-radius: 7px; overflow: hidden; background: #26324A">
+          <div style="width: 26.6%; background: #FF9F43"></div>
+          <div style="width: 20%; background: #FACC15"></div>
+        </div>
+        <div style="display: flex; gap: 14px; font-size: 14px; color: #A7B3C6">
+          <span>엄마 8분</span><span>민준 6분</span><span>남은 16분</span>
+        </div>
+      </div>
+      <div style="font-size: 15px; color: #A7B3C6; font-weight: 700">들를 곳 3</div>
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <div style="display: flex; align-items: center; gap: 12px">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #FF9F43; color: #0B1220; font-weight: 700; display: flex; align-items: center; justify-content: center">엄</div>
+          <div style="flex: 1; display: flex; flex-direction: column">
+            <span style="font-size: 18px; font-weight: 700">두물머리 카페</span>
+            <span style="font-size: 14px; color: #A7B3C6">엄마 제안 · 23분 후 · +8분</span>
+          </div>
+          <span style="font-size: 14px; color: #0B1220; background: #7FB2FF; border-radius: 999px; padding: 4px 10px; font-weight: 700">확정</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <div style="width: 36px; height: 36px; border-radius: 50%; background: #FACC15; color: #0B1220; font-weight: 700; display: flex; align-items: center; justify-content: center">민</div>
+          <div style="flex: 1; display: flex; flex-direction: column">
+            <span style="font-size: 18px; font-weight: 700">홍천 휴게소</span>
+            <span style="font-size: 14px; color: #A7B3C6">민준 요청 · 화장실 · +6분</span>
+          </div>
+          <span style="font-size: 14px; color: #0B1220; background: #7FB2FF; border-radius: 999px; padding: 4px 10px; font-weight: 700">확정</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <div style="width: 36px; height: 36px; box-sizing: border-box; border-radius: 50%; border: 2px dashed #2DD4BF; color: #2DD4BF; font-weight: 700; display: flex; align-items: center; justify-content: center">서</div>
+          <div style="flex: 1; display: flex; flex-direction: column">
+            <span style="font-size: 18px; font-weight: 700">횡성 한우 식당</span>
+            <span style="font-size: 14px; color: #A7B3C6">서연 제안 · +12분 · 가족 투표 중</span>
+          </div>
+          <span style="font-size: 14px; color: #FFB86B; border: 1.5px solid #FFB86B; border-radius: 999px; padding: 3px 10px; font-weight: 700">대기</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="height: 100px; box-sizing: border-box; border-top: 1px solid #26324A; background: #0F1726; padding: 0 24px; display: flex; align-items: center; gap: 22px">
+    <div style="display: flex; align-items: center; gap: 12px">
+      <div style="width: 52px; height: 52px; border-radius: 50%; background: #3D8BFF; color: #FFFFFF; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center">아</div>
+      <div style="display: flex; flex-direction: column"><span style="font-size: 17px; font-weight: 700">아빠</span><span style="font-size: 14px; color: #A7B3C6">운전 중</span></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px">
+      <div style="width: 52px; height: 52px; border-radius: 50%; background: #FF9F43; color: #0B1220; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center">엄</div>
+      <div style="display: flex; flex-direction: column"><span style="font-size: 17px; font-weight: 700">엄마</span><span style="font-size: 14px; color: #A7B3C6">제안 반영됨</span></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px">
+      <div style="width: 52px; height: 52px; border-radius: 50%; background: #2DD4BF; color: #0B1220; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center">서</div>
+      <div style="display: flex; flex-direction: column"><span style="font-size: 17px; font-weight: 700">서연</span><span style="font-size: 14px; color: #2DD4BF">제안 1 · 투표 중</span></div>
+    </div>
+    <div style="display: flex; align-items: center; gap: 12px">
+      <div style="width: 52px; height: 52px; border-radius: 50%; background: #FACC15; color: #0B1220; font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center">민</div>
+      <div style="display: flex; flex-direction: column"><span style="font-size: 17px; font-weight: 700">민준</span><span style="font-size: 14px; color: #FACC15">화장실 요청 → 휴게소</span></div>
+    </div>
+    <div style="flex: 1"></div>
+    <button type="button" style="height: 64px; padding: 0 28px; border: none; border-radius: 16px; background: #3D8BFF; color: #FFFFFF; font-family: inherit; font-size: 20px; font-weight: 700; display: flex; align-items: center; gap: 12px; cursor: pointer">가족 제안 보기<span style="background: #FFFFFF; color: #1D5FD1; border-radius: 999px; min-width: 28px; height: 28px; font-size: 16px; display: inline-flex; align-items: center; justify-content: center">1</span></button>
+    <button type="button" aria-label="음성으로 결정" style="width: 64px; height: 64px; border-radius: 50%; border: 2px solid #3D8BFF; background: transparent; color: #7FB2FF; display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"></rect><path d="M5 11a7 7 0 0 0 14 0"></path><path d="M12 18v3"></path></svg>
+    </button>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1600,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

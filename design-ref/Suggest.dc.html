@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>주행 중 제안 도착</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#7FB2FF}a:hover{color:#A9CCFF}
+</style>
+</helmet>
+<div style="width: 1600px; height: 600px; display: flex; background: #0B1220; color: #F2F5FA; font-family: 'Noto Sans KR', system-ui, sans-serif; overflow: hidden">
+  <div style="position: relative; flex: 1 1 auto; overflow: hidden">
+    <svg viewBox="0 0 960 600" preserveAspectRatio="xMidYMid slice" style="position: absolute; inset: 0; width: 100%; height: 100%" aria-hidden="true">
+      <rect width="960" height="600" fill="#0F1A2A"></rect>
+      <path d="M0 450 C200 410 320 510 520 465 S800 380 960 420" stroke="#123049" stroke-width="44" fill="none"></path>
+      <path d="M0 300 C300 290 500 340 960 310" stroke="#22304A" stroke-width="9" fill="none"></path>
+      <path d="M700 0 L800 600" stroke="#22304A" stroke-width="9" fill="none"></path>
+      <path d="M150 560 C230 460 270 360 400 320 S620 250 700 190 S860 110 960 80" stroke="#0B1220" stroke-width="22" fill="none" stroke-linecap="round"></path>
+      <path d="M150 560 C230 460 270 360 400 320 S620 250 700 190 S860 110 960 80" stroke="#3D8BFF" stroke-width="12" fill="none" stroke-linecap="round"></path>
+      <path d="M700 190 C760 230 820 260 880 250" stroke="#2DD4BF" stroke-width="7" fill="none" stroke-dasharray="10 8" stroke-linecap="round"></path>
+      <circle cx="880" cy="250" r="20" fill="#2DD4BF" stroke="#0B1220" stroke-width="4"></circle>
+      <text x="880" y="256" text-anchor="middle" font-size="16" font-weight="700" fill="#0B1220">서</text>
+      <circle cx="206" cy="484" r="26" fill="#3D8BFF" opacity="0.25"></circle>
+      <path d="M206 466 L220 498 L206 490 L192 498 Z" fill="#F2F5FA"></path>
+    </svg>
+    <div style="position: absolute; left: 24px; top: 24px; display: flex; align-items: center; gap: 18px; background: #131C2B; border-radius: 18px; padding: 16px 24px 16px 16px">
+      <div style="width: 68px; height: 68px; border-radius: 14px; background: #3D8BFF; display: flex; align-items: center; justify-content: center">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#FFFFFF" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 21V11a4 4 0 0 1 4-4h8"></path><path d="M15 3l4 4-4 4"></path></svg>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 2px">
+        <div style="font-size: 36px; font-weight: 900; line-height: 1.1">900m</div>
+        <div style="font-size: 18px; color: #A7B3C6">서울양양고속도로 방면 우측</div>
+      </div>
+    </div>
+    <div style="position: absolute; left: 24px; bottom: 20px; background: #131C2B; border-radius: 12px; padding: 8px 14px; font-size: 16px; color: #D5DDEA">점선 = 제안 경유지로 가는 길 미리보기</div>
+  </div>
+  <div style="width: 680px; flex: 0 0 680px; box-sizing: border-box; background: #131C2B; border-left: 1px solid #26324A; padding: 26px 30px; display: flex; flex-direction: column; gap: 18px">
+    <div style="display: flex; align-items: center; gap: 16px">
+      <div style="width: 60px; height: 60px; border-radius: 50%; background: #2DD4BF; color: #0B1220; font-size: 24px; font-weight: 700; display: flex; align-items: center; justify-content: center">서</div>
+      <div style="display: flex; flex-direction: column">
+        <span style="font-size: 24px; font-weight: 700">서연이 들를 곳을 제안했어요</span>
+        <span style="font-size: 16px; color: #A7B3C6">엄마 찬성 · 민준 아직 · 방금</span>
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 4px">
+      <span style="font-size: 34px; font-weight: 900">횡성 한우 식당</span>
+      <span style="font-size: 17px; color: #A7B3C6">식당 · 영업 중 · 경로에서 2.3km 옆</span>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px">
+      <div style="background: #1A2537; border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 30px; font-weight: 900">+12분</span><span style="font-size: 15px; color: #A7B3C6">도착이 늦어져요</span>
+      </div>
+      <div style="background: #1A2537; border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 30px; font-weight: 900">15:04</span><span style="font-size: 15px; color: #A7B3C6">새 도착 시각</span>
+      </div>
+      <div style="background: #1A2537; border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 2px">
+        <span style="font-size: 30px; font-weight: 900; color: #FFB86B">4분</span><span style="font-size: 15px; color: #A7B3C6">여유시간 남음</span>
+      </div>
+    </div>
+    <div style="align-self: flex-start; background: #12302E; border-radius: 4px 16px 16px 16px; padding: 10px 16px; font-size: 18px; color: #CFFAF3">“배고파! 점심 여기서 먹자”</div>
+    <div style="display: flex; gap: 12px; margin-top: 4px">
+      <button type="button" style="flex: 1.5 1 0; height: 78px; border: none; border-radius: 16px; background: #3D8BFF; color: #FFFFFF; font-family: inherit; font-size: 24px; font-weight: 700; cursor: pointer">경유 추가</button>
+      <button type="button" style="flex: 1.1 1 0; height: 78px; border: none; border-radius: 16px; background: #26324A; color: #F2F5FA; font-family: inherit; font-size: 20px; font-weight: 700; cursor: pointer">다음 정차 때</button>
+      <button type="button" style="flex: 0.8 1 0; height: 78px; border: 1.5px solid #3A4862; border-radius: 16px; background: transparent; color: #D5DDEA; font-family: inherit; font-size: 20px; font-weight: 700; cursor: pointer">넘기기</button>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 8px">
+      <div style="height: 6px; border-radius: 3px; background: #26324A; overflow: hidden"><div style="width: 62%; height: 100%; background: #7FB2FF"></div></div>
+      <div style="display: flex; justify-content: space-between; font-size: 15px; color: #A7B3C6">
+        <span>응답 없으면 6초 뒤 ‘다음 정차 때’로 넘어가요</span>
+        <span>핸들 ◀ ▶ 선택 · “추가해”</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1600,"height":600}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
