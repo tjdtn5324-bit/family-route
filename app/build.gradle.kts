@@ -1,0 +1,83 @@
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+android {
+    namespace = "ai.familyroute.demo"
+    compileSdk = 34
+    useLibrary("android.car")
+
+    defaultConfig {
+        applicationId = "ai.familyroute.demo"
+        minSdk = 28 // Pleos 요구사항
+        targetSdk = 34
+        versionCode = 1
+        versionName = "0.1-phase1"
+        val roomUrl = providers.gradleProperty("familyServerUrl").orElse("http://10.0.2.2:8789").get()
+        require(roomUrl == "http://10.0.2.2:8789" || roomUrl.startsWith("https://")) { "familyServerUrl must use HTTPS" }
+        buildConfigField("String", "FAMILY_SERVER_URL", "\"${roomUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+        val roomSecret = providers.environmentVariable("FAMILY_ROOM_CREATE_SECRET").orElse("").get()
+        require(roomSecret.matches(Regex("[A-Za-z0-9_-]*"))) { "Invalid room create secret" }
+        buildConfigField("String", "FAMILY_ROOM_CREATE_SECRET", "\"$roomSecret\"")
+    }
+
+    signingConfigs {
+        create("contest") {
+            val path = providers.environmentVariable("FAMILY_RELEASE_KEYSTORE").orNull
+            if (!path.isNullOrBlank()) {
+                storeFile = file(path)
+                storePassword = providers.environmentVariable("FAMILY_RELEASE_STORE_PASSWORD").orNull
+                keyAlias = providers.environmentVariable("FAMILY_RELEASE_KEY_ALIAS").orNull
+                keyPassword = providers.environmentVariable("FAMILY_RELEASE_KEY_PASSWORD").orNull
+            }
+        }
+    }
+    buildTypes {
+        release {
+            applicationIdSuffix = ".contest"
+            isMinifyEnabled = false
+            if (!providers.environmentVariable("FAMILY_RELEASE_KEYSTORE").orNull.isNullOrBlank()) {
+                signingConfig = signingConfigs.getByName("contest")
+            }
+        }
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions {
+        jvmTarget = "17"
+    }
+}
+
+dependencies {
+    val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
+    implementation(composeBom)
+    implementation("androidx.compose.ui:ui")
+    implementation("androidx.compose.foundation:foundation")
+    implementation("androidx.compose.ui:ui-tooling-preview")
+    debugImplementation("androidx.compose.ui:ui-tooling")
+    implementation("androidx.activity:activity-compose:1.9.3")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("com.google.zxing:core:3.5.3")
+
+    testImplementation("junit:junit:4.13.2")
+}
+
+// 단위 테스트가 assets/scenario.json을 직접 읽으므로 바뀌면 다시 돌린다
+tasks.withType<Test>().configureEach {
+    inputs.file("src/main/assets/scenario.json")
+}

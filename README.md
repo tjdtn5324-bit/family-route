@@ -1,0 +1,94 @@
+# 가족경로
+
+가족이 휴대폰에서 가고 싶은 장소를 모으고, 운전자가 차량 화면에서 확인해 함께 여행을 준비하는 Pleos Connect 차량용 앱 프로토타입입니다.
+
+## 앱 실행 파일
+
+- APK: [`apk/familyroute_가족경로_release.apk`](apk/familyroute_%EA%B0%80%EC%A1%B1%EA%B2%BD%EB%A1%9C_release.apk)
+- 서명된 Android **release** 빌드입니다. `familyroute`는 임시 제출명이며 실제 팀명 확정 후 공모전 규칙에 맞춰 파일명을 변경할 수 있습니다.
+- 기본 서버 주소는 에뮬레이터의 호스트 PC를 가리키는 `http://10.0.2.2:8789`입니다. 아래의 시연 서버를 켜야 목적지 검색과 가족방 기능을 사용할 수 있습니다.
+
+## 현재 구현한 기능
+
+- 차량용 지도 화면에서 목적지 검색, 경로 표시와 경유지 추가·순서 변경·삭제
+- 휴대폰 가족방의 장소 제안·투표와 운전자의 결정, 가족 제안 알림
+- 휴대폰에서 여행방 준비 및 링크 초대, 차량 연결 코드
+- 개인 계정별 장소 저장과 공유 코스 둘러보기·경유지로 가져오기
+- 기어·차량 UX 제한에 따른 주요 조작 제한
+
+별도 가족방 서버와 장소·길찾기 서비스가 필요한 기능입니다. 개인 계정 및 휴대폰 초대는 서버 설정에 따라 이용 가능 범위가 달라집니다. 현재 앱은 프로토타입이며 아래 제한 사항을 확인해 주세요.
+
+## 빠른 실행: API 키 없는 시연 모드
+
+### 환경
+
+- Windows 10/11, Android Studio 및 Android SDK Platform 34
+- Pleos Connect Emulator 2.1.0 / Android API 34의 Automotive AVD
+- Java 17 이상(개발 시 JDK 21 사용), Node.js 24 이상, Git
+- PC의 로컬 8789 포트와 에뮬레이터에서 호스트로의 `10.0.2.2` 연결
+- 지도 배경 타일은 인터넷 연결이 필요하며 [OpenStreetMap](https://www.openstreetmap.org/copyright) 제공 데이터를 사용합니다.
+
+### 1. 시연 서버 실행
+
+저장소를 내려받은 후 PowerShell에서 실행합니다.
+
+```powershell
+cd server
+npm ci
+$env:PORT = '8789'
+$env:FAMILY_DEMO_MODE = '1'
+node dev.mjs
+```
+
+서버 창은 앱을 사용하는 동안 계속 켜 둡니다. 이 모드의 부산역·광안리·자갈치시장 등은 **시연용 예시**이고, 지도에 그려지는 연결선은 **실제 도로 경로가 아닌 직선**입니다. 실시간 위치, 실제 주행 시간과 거리를 제공하지 않습니다. 이 모드에서는 별도의 카카오·AWS 계정이나 키가 필요하지 않습니다.
+
+### 2. APK 설치 및 시연
+
+Pleos Connect 에뮬레이터를 실행하고 저장소 루트에서 다음을 실행합니다.
+
+```powershell
+adb install -r 'apk/familyroute_가족경로_release.apk'
+adb shell am start -n ai.familyroute.demo.contest/ai.familyroute.demo.MainActivity
+```
+
+1. 차량 앱에서 **목적지 찾기**를 누르고 `부산역`을 검색합니다.
+2. `(시연)`이 표시된 결과를 선택하고 목적지를 설정합니다.
+3. 화면의 `시연용 직선 연결 · 실제 도로 아님` 표시와 지도 연결선을 확인합니다.
+4. **추천 여행 보기**에서 시연용 부산 코스를 살펴봅니다.
+
+차량 조작은 정차 상태와 UX 제한이 해제된 경우에만 가능합니다. 시연기에서는 Pleos Virtual Console의 기어 상태가 P인지 확인해 주세요. 현재 로컬 서버는 PC에서만 연결되므로 위 절차만으로 외부 휴대폰 초대·계정 로그인을 검증할 수는 없습니다.
+
+## 실제 장소 검색과 가족방 시연
+
+- 서버에 유효한 `KAKAO_REST_API_KEY`를 설정하고 `FAMILY_DEMO_MODE`를 해제하면 카카오 장소 검색과 길찾기를 요청합니다. 사용자의 카카오 계정 설정 및 서비스 이용 조건이 필요하며, 키는 서버 환경변수로만 제공해야 합니다.
+- 서로 다른 네트워크의 휴대폰을 초대하려면 심사 기간에 접근 가능한 HTTPS 서버 주소가 필요합니다. 차량 앱도 해당 주소로 다시 빌드해야 합니다. 임시 터널은 PC가 꺼지거나 주소가 바뀌면 연결이 끊어집니다.
+- 로그인·계정별 저장 기능은 Cognito와 DynamoDB를 별도로 구성하고 `server/README.md`의 서버 환경변수를 설정해야 합니다. 기본 시연 모드에는 계정이 연결되어 있지 않습니다.
+- 인증정보, 개인 정보, 서명 키나 API 키를 GitHub 또는 APK에 넣지 마세요. 이 저장소의 APK에는 서버 생성 비밀값과 API 키를 넣지 않았습니다.
+
+## 소스 빌드와 검증
+
+```powershell
+# 저장소 루트
+.\gradlew.bat :app:testDebugUnitTest :app:assembleRelease
+
+# 서버 테스트
+cd server
+npm ci
+npm test
+```
+
+이 명령은 서명 환경변수가 없으면 **서명되지 않은 release APK**를 만듭니다. 이미 서명된 심사용 APK는 위 `apk/` 파일을 사용하세요. 직접 서명하려면 저장소 밖에 보관한 키와 `FAMILY_RELEASE_KEYSTORE`, `FAMILY_RELEASE_STORE_PASSWORD`, `FAMILY_RELEASE_KEY_ALIAS`, `FAMILY_RELEASE_KEY_PASSWORD` 환경변수를 설정합니다. 타인의 서명 키를 공유하지 마세요.
+
+## 현재 한계
+
+- GPS 실시간 위치와 실제 주행 중 순차 안내는 미구현입니다. 알림에 표시되는 거리는 **서울 시연 출발점 기준 직선거리**입니다.
+- 실제 차량 또는 Pleos 내비게이션에 경유지를 반영하지 않습니다. Pleos FusedLocation / Vehicle SDK 연계는 후속 개발 계획입니다.
+- 가족방, 제안, 공유 코스는 서버 메모리에만 있으며 12시간 후 또는 서버 재시작 시 사라집니다. 영구 저장과 운영용 인프라는 미완성입니다.
+- 공유 코스의 부산 예시는 명시적인 시연 데이터입니다. 실제 이용자 후기나 인기 순위를 뜻하지 않습니다.
+- 최신 앱의 주행 중 알림은 에뮬레이터에서 제안 수신을 확인했지만 실제 도로·차량에서 검증하지 않았습니다.
+
+## 오픈소스 및 자료
+
+- 지도 라이브러리 Leaflet: `app/src/main/assets/map/LICENSE`
+- Noto Sans KR: `docs/licenses/NotoSansKR-OFL.txt`
+- 부산 테마 이미지는 시연용 일러스트이며 실제 장소 사진이 아닙니다.

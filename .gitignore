@@ -1,0 +1,17 @@
+.gradle/
+.kotlin/
+**/build/
+.idea/
+*.iml
+local.properties
+node_modules/
+.env
+.env.*
+*.keystore
+*.jks
+*.p12
+*.pem
+*.key
+*.log
+captures/
+*.mp4

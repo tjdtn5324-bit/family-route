@@ -1,0 +1,13 @@
+import { createApp } from './app.mjs';
+import { createIdentityVerifier, createSavedPlaceStore } from './profile.mjs';
+import { demoSearch, demoDirections } from './offline-demo.mjs';
+const port = Number(process.env.PORT || 8788);
+const { COGNITO_USER_POOL_ID: pool, COGNITO_CLIENT_ID: clientId, COGNITO_AUTH_DOMAIN: domain, SAVED_PLACES_TABLE: table } = process.env;
+const region = process.env.AWS_REGION || 'ap-southeast-2';
+const anyConfigured = [pool,clientId,domain,table].some(Boolean);
+if (anyConfigured && ![pool,clientId,domain,table].every(Boolean)) throw new Error('계정 저장 설정이 완전하지 않습니다');
+if (anyConfigured && !/^https:\/\/[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.com$/.test(domain)) throw new Error('로그인 주소 설정을 확인해 주세요');
+const profile = anyConfigured ? { config:{clientId,domain,region}, verify:createIdentityVerifier({region,userPoolId:pool,clientId}), store:createSavedPlaceStore({region,tableName:table}) } : null;
+const demo = process.env.FAMILY_DEMO_MODE === '1';
+if (demo) process.env.FAMILY_SAMPLE_COURSES = '1';
+createApp({profile,...(demo ? {search:demoSearch,directions:demoDirections} : {})}).listen(port, '127.0.0.1', () => console.log(`개발 서버: http://127.0.0.1:${port} (이 PC에서만 접속)${demo?' · 시연 데이터':''}`));

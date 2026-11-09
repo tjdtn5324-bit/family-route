@@ -1,0 +1,331 @@
+package ai.familyroute.demo
+
+import android.os.Bundle
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
+import android.webkit.ConsoleMessage
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import ai.familyroute.demo.phone.*
+import ai.familyroute.demo.ui.theme.FrColors
+import ai.familyroute.demo.ui.theme.frText
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent {
+            val client = remember { FamilyRoomClient() }
+            val parking = remember { ParkingGuard(applicationContext) }
+            val parked by parking.allowed.collectAsStateWithLifecycle()
+            DisposableEffect(parking) { onDispose { parking.close() } }
+            var room by remember { mutableStateOf<LiveRoom?>(null) }
+            var pairingCode by remember { mutableStateOf("") }
+            var switchingRoom by remember { mutableStateOf(false) }
+            var proposals by remember { mutableStateOf<List<LiveProposal>>(emptyList()) }
+            var incomingProposal by remember { mutableStateOf<LiveProposal?>(null) }
+            var route by remember { mutableStateOf<LiveRoute?>(null) }
+            var waypoints by remember { mutableStateOf<List<LiveWaypoint>>(emptyList()) }
+            var editWaypoints by remember { mutableStateOf<List<LiveWaypoint>>(emptyList()) }
+            var editPanel by remember { mutableStateOf(false) }
+            var editError by remember { mutableStateOf("") }
+            var itineraryVersion by remember { mutableIntStateOf(-1) }
+            var editVersion by remember { mutableIntStateOf(-1) }
+            var panel by remember { mutableStateOf(false) }
+            var error by remember { mutableStateOf("") }
+            var proposalError by remember { mutableStateOf("") }
+            var notice by remember { mutableStateOf("") }
+            var busy by remember { mutableStateOf(false) }
+            var searchPanel by remember { mutableStateOf(false) }
+            var query by remember { mutableStateOf("") }
+            var results by remember { mutableStateOf<List<SearchPlace>>(emptyList()) }
+            var selected by remember { mutableStateOf<SearchPlace?>(null) }
+            var recommendations by remember { mutableStateOf<List<SharedCourse>>(emptyList()) }
+            var recommendationsUnavailable by remember { mutableStateOf(false) }
+            var companions by remember { mutableStateOf<Set<String>>(emptySet()) }
+            var travelStyles by remember { mutableStateOf<Set<String>>(emptySet()) }
+            var travelHours by remember { mutableStateOf<Int?>(null) }
+            val scope = rememberCoroutineScope()
+            LaunchedEffect(parked) { if (!parked) { panel = false; searchPanel = false; editPanel = false } }
+            LaunchedEffect(room) {
+                val active = room ?: return@LaunchedEffect
+                val seen = mutableSetOf<String>()
+                var initialSync = true
+                incomingProposal = null
+                while (true) {
+                    try {
+                        val s = client.state(active)
+                        val fresh = if (initialSync) null else s.proposals.lastOrNull { it.id !in seen }
+                        seen.addAll(s.proposals.map { it.id })
+                        initialSync = false
+                        if (fresh != null) incomingProposal = fresh
+                        proposals = s.proposals; route = s.route; waypoints = s.waypoints; itineraryVersion = s.itineraryVersion
+                        if (error == "연결이 끊겼어요. 잠시 후 다시 확인해 주세요.") error = ""
+                    }
+                    catch (_: Exception) { error = "연결이 끊겼어요. 잠시 후 다시 확인해 주세요." }
+                    delay(2000)
+                }
+            }
+            LaunchedEffect(incomingProposal?.id) {
+                if (incomingProposal != null) { delay(8000); incomingProposal = null }
+            }
+            Box(Modifier.fillMaxSize().background(Color(0xFFF6F3F2))) {
+                FamilyMap(route, Modifier.fillMaxSize())
+                Column(Modifier.align(Alignment.TopStart).padding(20.dp).widthIn(max = 400.dp).background(Color(0xFF002C5F), RoundedCornerShape(18.dp)).padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BasicText("가족경로", style = frText(28, FontWeight.Black))
+                    BasicText("함께 정하는 우리 가족 여행", style = frText(18, color = Color(0xFFCCE5F5)))
+                    if (route == null) BasicText("어디로 떠날까요?", style = frText(22, FontWeight.Bold))
+                    else {
+                        BasicText(route!!.guidance, style = frText(22, FontWeight.Bold))
+                        BasicText(if (route!!.source == "DEMO") "시연용 직선 연결 · 실제 도로 아님" else "${route!!.distance / 1000}km · 약 ${route!!.duration / 60}분", style = frText(20, color = Color(0xFFF6F3F2)))
+                    }
+                    BasicText(if (route == null) "출발 위치: 서울 (시연)" else "서울 (시연) → ${route!!.destinationName}", style = frText(16, color = Color(0xFFCCE5F5)))
+                }
+                Column(Modifier.align(Alignment.TopEnd).padding(20.dp).widthIn(min = 260.dp, max = 340.dp).background(Color(0xFFF6F3F2), RoundedCornerShape(18.dp)).padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    BasicText("우리 가족 여행", style = frText(23, FontWeight.Bold, Color(0xFF002C5F)))
+                    BasicText(if (room == null) "가족과 함께 여행을 정해요" else if (proposals.isEmpty()) "가족의 제안을 기다리고 있어요" else "새로운 가족 제안 ${proposals.size}곳", style = frText(17, color = Color(0xFF344E67)))
+                    ActionButton("목적지 찾기", icon = android.R.drawable.ic_menu_search, enabled = parked, modifier = Modifier.fillMaxWidth()) { searchPanel = true; panel = false; selected = null; error = "" }
+                    ActionButton(if (room == null) "가족 초대하기" else "가족 제안 보기${if (proposals.isNotEmpty()) " (${proposals.size})" else ""}", icon = android.R.drawable.ic_menu_share, enabled = parked, modifier = Modifier.fillMaxWidth()) { panel = true; searchPanel = false; error = "" }
+                    ActionButton("추천 여행 보기", secondary = true, icon = android.R.drawable.ic_menu_directions, enabled = parked, modifier = Modifier.fillMaxWidth()) { searchPanel = true; panel = false; error = "" }
+                    if (route != null) ActionButton("경유지 순서·삭제", secondary = true, icon = android.R.drawable.ic_menu_edit, enabled = parked && itineraryVersion >= 0, modifier = Modifier.fillMaxWidth()) { editWaypoints = waypoints; editVersion = itineraryVersion; editError = ""; editPanel = true; panel = false; searchPanel = false }
+                    if (!parked) BasicText("안전을 위해 정차 후 이용해 주세요", style = frText(16, color = Color(0xFF344E67)))
+                }
+                BasicText("경로 미리보기 · 출발 위치는 시연", style = frText(16, FontWeight.Bold, Color(0xFF002C5F)), modifier = Modifier.align(Alignment.BottomStart).padding(12.dp).background(Color.White, RoundedCornerShape(8.dp)).padding(horizontal = 12.dp, vertical = 7.dp))
+                if (!panel && !searchPanel && !editPanel) incomingProposal?.let { suggestion ->
+                    Column(Modifier.align(Alignment.BottomEnd).padding(end = 20.dp, bottom = 20.dp).widthIn(max = 380.dp).background(Color.White, RoundedCornerShape(16.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        BasicText("${suggestion.member.take(20)}님이 추천했어요", maxLines = 1, style = frText(17, FontWeight.Bold, Color(0xFF002C5F)))
+                        BasicText(suggestion.place, maxLines = 1, style = frText(21, FontWeight.Bold, Color(0xFF002C5F)))
+                        val distance = if (suggestion.type == "COURSE") null else demoStraightLineDistance(suggestion.latitude, suggestion.longitude)
+                        BasicText(if (distance != null) "서울 시연 위치에서 직선 $distance" else "거리 정보 없음 · 시연 위치", maxLines = 1, style = frText(16, color = Color(0xFF344E67)))
+                        if (!parked) BasicText("자세한 내용은 정차 후 확인해 주세요", style = frText(15, color = Color(0xFF344E67)))
+                    }
+                }
+                if (notice.isNotBlank()) BasicText(notice, style = frText(19, FontWeight.Bold, Color(0xFF002C5F)), modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp).background(Color.White, RoundedCornerShape(12.dp)).clickable { notice = "" }.padding(16.dp))
+                if (editPanel && parked) {
+                    Box(Modifier.fillMaxSize().background(Color(0xB3031429)), contentAlignment = Alignment.Center) {
+                        Column(Modifier.fillMaxWidth(.83f).fillMaxHeight(.88f).background(Color(0xFFF6F3F2), RoundedCornerShape(20.dp)).padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                BasicText("가는 순서 바꾸기", style = frText(26, FontWeight.Black, Color(0xFF002C5F)))
+                                ActionButton("닫기", secondary = true, enabled = !busy) { editPanel = false }
+                            }
+                            BasicText("서울 출발 (시연)", style = frText(20, FontWeight.Bold, Color(0xFF002C5F)))
+                            if (editWaypoints.isEmpty()) BasicText("들르는 곳이 없어요. 목적지로 바로 가요.", style = frText(19, color = Color(0xFF344E67)))
+                            editWaypoints.forEachIndexed { i, place ->
+                                Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    BasicText("${i + 1} · ${place.name}", style = frText(21, FontWeight.Bold, Color(0xFF002C5F)))
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        ActionButton("앞으로", secondary = true, enabled = !busy && i > 0) { val list = editWaypoints.toMutableList(); val item = list.removeAt(i); list.add(i - 1, item); editWaypoints = list; editError = "" }
+                                        ActionButton("뒤로", secondary = true, enabled = !busy && i < editWaypoints.lastIndex) { val list = editWaypoints.toMutableList(); val item = list.removeAt(i); list.add(i + 1, item); editWaypoints = list; editError = "" }
+                                        ActionButton("빼기", secondary = true, enabled = !busy) { editWaypoints = editWaypoints.filterNot { it.id == place.id }; editError = "" }
+                                    }
+                                }
+                            }
+                            BasicText("목적지 · ${route?.destinationName ?: ""}", style = frText(20, FontWeight.Bold, Color(0xFF002C5F)))
+                            if (editError.isNotBlank()) BasicText(editError, style = frText(18, FontWeight.Bold, Color(0xFFB1291C)))
+                            BasicText("‘변경한 순서로 길 찾기’를 누르면 새 경로를 계산해요.", style = frText(17, color = Color(0xFF344E67)))
+                            ActionButton(if (busy) "새 경로를 찾고 있어요" else "변경한 순서로 길 찾기", enabled = !busy) {
+                                if (!busy) { busy = true; editError = ""; scope.launch { try { val active = room!!; client.updateWaypoints(active, editWaypoints.map { it.id }, editVersion); val s = client.state(active); route = s.route; waypoints = s.waypoints; itineraryVersion = s.itineraryVersion; editPanel = false; notice = "변경한 순서로 경로를 찾았어요." } catch (_: Exception) { editError = "경로 변경 결과를 확인하지 못했어요. 창을 닫고 최신 경로를 다시 확인해 주세요." } finally { busy = false } } }
+                            }
+                        }
+                    }
+                }
+                if (searchPanel && parked) {
+                    Box(Modifier.fillMaxSize().background(Color(0xB3031429)), contentAlignment = Alignment.Center) {
+                        Column(Modifier.fillMaxWidth(.83f).fillMaxHeight(.88f).background(Color(0xFFF6F3F2), RoundedCornerShape(20.dp)).padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                BasicText("어디로 떠날까요?", style = frText(24, FontWeight.Black, Color(0xFF002C5F)))
+                                ActionButton("닫기", secondary = true) { searchPanel = false }
+                            }
+                            BasicText("목적지를 검색하면 주변의 추천 여행도 볼 수 있어요. 출발지는 서울 시연 위치예요.", style = frText(18, color = Color(0xFF344E67)))
+                            if (route != null) BasicText("새 목적지를 정하면 기존 경유지가 지워져요.", style = frText(16, color = Color(0xFF344E67)))
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Box(Modifier.weight(1f).background(Color.White, RoundedCornerShape(10.dp)).padding(14.dp)) {
+                                    if (query.isEmpty()) BasicText("예: 부산역", style = frText(20, color = Color(0xFF526C80)))
+                                    BasicTextField(query, { query = it }, textStyle = frText(20, color = Color(0xFF002C5F)), singleLine = true, modifier = Modifier.fillMaxWidth().heightIn(min = 36.dp))
+                                }
+                                ActionButton(if (busy) "검색 중" else "검색") { if (!busy && query.isNotBlank()) { busy = true; scope.launch { try { val active = room ?: client.create().also { room = it }; results = client.search(active, query); selected = null; error = if (results.isEmpty()) "검색 결과가 없어요." else "" } catch (_: Exception) { error = "장소를 검색하지 못했어요." } finally { busy = false } } } }
+                            }
+                            if (error.isNotBlank()) BasicText(error, style = frText(15, color = Color(0xFFB1291C)))
+                            if (selected == null) results.forEach { p ->
+                                Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    BasicText(p.name, style = frText(19, FontWeight.Bold, Color(0xFF002C5F)))
+                                    BasicText(p.address, style = frText(17, color = Color(0xFF344E67)))
+                                    ActionButton(if (busy) "경로 찾는 중" else "목적지로 정하기") { if (!busy) { busy = true; scope.launch { try { val active = room!!; client.setDestination(active, p); val state = client.state(active); route = state.route; companions = state.preferences.companions; travelStyles = state.preferences.styles; travelHours = state.preferences.hours; selected = p; results = emptyList(); error = ""; recommendationsUnavailable = false; recommendations = try { client.recommendations(active, p) } catch (_: Exception) { recommendationsUnavailable = true; emptyList() } } catch (_: Exception) { error = "경로를 찾지 못했어요. 다시 시도해 주세요." } finally { busy = false } } } }
+                                }
+                            } else {
+                                BasicText("${selected!!.name}까지 경로를 찾았어요", style = frText(22, FontWeight.Bold, Color(0xFF002C5F)))
+                                BasicText("어떤 여행을 원하세요?", style = frText(23, FontWeight.Bold, Color(0xFF002C5F)))
+                                BasicText("선택하지 않아도 괜찮아요. 여러 개를 고를 수 있어요.", style = frText(17, color = Color(0xFF344E67)))
+                                BasicText("누구와 함께 가나요?", style = frText(19, FontWeight.Bold, Color(0xFF002C5F)))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf("CHILD" to "아이와", "PARENTS" to "부모님과", "PET" to "반려동물과").forEach { (value, label) ->
+                                        PreferenceButton(label, value in companions) { companions = if (value in companions) companions - value else companions + value }
+                                    }
+                                }
+                                BasicText("어떤 하루가 좋나요?", style = frText(19, FontWeight.Bold, Color(0xFF002C5F)))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf("FOOD" to "맛있는 여행", "RELAX" to "느긋한 여행", "ACTIVITY" to "신나는 여행").forEach { (value, label) ->
+                                        PreferenceButton(label, value in travelStyles) { travelStyles = if (value in travelStyles) travelStyles - value else travelStyles + value }
+                                    }
+                                }
+                                BasicText("여행 시간", style = frText(19, FontWeight.Bold, Color(0xFF002C5F)))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    listOf(null to "상관없어요", 2 to "2시간", 4 to "4시간", 6 to "6시간", 8 to "8시간").forEach { (value, label) ->
+                                        PreferenceButton(label, value == travelHours) { travelHours = value }
+                                    }
+                                }
+                                ActionButton(if (busy) "추천 찾는 중" else "우리 가족에게 맞는 여행 찾기", icon = android.R.drawable.ic_menu_search) {
+                                    if (!busy) { busy = true; scope.launch { try { val active = room!!; client.savePreferences(active, companions, travelStyles, travelHours); recommendations = client.recommendations(active, selected!!); recommendationsUnavailable = false; error = "" } catch (_: Exception) { recommendationsUnavailable = true; error = "추천 여행을 가져오지 못했어요. 다시 시도해 주세요." } finally { busy = false } } }
+                                }
+                                BasicText("목적지 주변의 추천 여행", style = frText(22, FontWeight.Bold, Color(0xFF002C5F)))
+                                BasicText("추천 표시는 코스 작성자가 선택한 여행 종류 기준이에요. 시설 이용 가능 여부 등은 확인해 주세요.", style = frText(16, color = Color(0xFF344E67)))
+                                if (recommendationsUnavailable) BasicText("추천 여행을 불러오지 못했어요. 잠시 후 다시 시도해 주세요.", style = frText(18, color = Color(0xFF344E67)))
+                                else if (recommendations.isEmpty()) BasicText("아직 주변에 공유된 여행이 없어요.", style = frText(18, color = Color(0xFF344E67)))
+                                recommendations.forEach { c ->
+                                    Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        BasicText(c.title, style = frText(18, FontWeight.Bold, Color(0xFF002C5F)))
+                                        if (c.isSample) BasicText("시연 예시 코스 · 실제 사용자 게시물이 아니에요", style = frText(16, color = Color(0xFF42576D)))
+                                        BasicText(c.stops, style = frText(18, color = Color(0xFF344E67)))
+                                        if (c.matchReason.isNotBlank()) BasicText("우리 가족이 고른 조건: ${c.matchReason}", style = frText(17, color = Color(0xFF005775)))
+                                        BasicText("선택하면 위 장소들이 경유지로 추가돼요. 목적지는 그대로예요.", style = frText(16, color = Color(0xFF344E67)))
+                                        if (c.uses > 0) BasicText("${c.uses}번 선택된 코스", style = frText(16, color = Color(0xFF42576D)))
+                                        ActionButton(if (busy) "경로 찾는 중" else "이 코스를 경유지로 추가") { if (!busy) { busy = true; scope.launch { try { client.useCourse(room!!, c); route = client.state(room!!).route; searchPanel = false; error = "" } catch (_: Exception) { error = "코스를 추가하지 못했어요. 경유지는 최대 5곳이에요." } finally { busy = false } } } }
+                                    }
+                                }
+                                ActionButton("지도 보기") { searchPanel = false }
+                            }
+                        }
+                    }
+                }
+                if (panel && parked) {
+                    Box(Modifier.fillMaxSize().background(Color(0xB3031429)), contentAlignment = Alignment.Center) {
+                        Column(Modifier.fillMaxWidth(.83f).fillMaxHeight(.88f).background(Color(0xFFF6F3F2), RoundedCornerShape(20.dp)).padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column { BasicText("우리 가족 여행", style = frText(26, FontWeight.Black, Color(0xFF002C5F))); BasicText("가족과 함께 가고 싶은 곳을 골라요", style = frText(18, color = Color(0xFF344E67))) }
+                                ActionButton("닫기", secondary = true) { panel = false }
+                            }
+                            if (error.isNotEmpty()) BasicText(error, style = frText(15, color = Color(0xFFB1291C)))
+                            if (room == null) {
+                                BasicText("가족방을 만들고 QR코드를 공유해 주세요.", style = frText(18, color = Color(0xFF002C5F)))
+                                ActionButton(if (busy) "가족방 준비 중" else "가족방 만들기") {
+                                    if (!busy) { busy = true; scope.launch { try { room = client.create(); error = "" } catch (_: Exception) { error = "가족방에 연결하지 못했어요. 다시 시도해 주세요." } finally { busy = false } } }
+                                }
+                                BasicText("미리 만든 여행방이 있나요? 휴대폰의 영문·숫자 10자리 연결 코드를 입력해 주세요.", style = frText(18, color = Color(0xFF002C5F)))
+                                BasicTextField(value = pairingCode, onValueChange = { pairingCode = it.uppercase().take(10) }, singleLine = true, textStyle = frText(22, color = Color(0xFF002C5F)), modifier = Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(10.dp)).padding(16.dp).semantics { contentDescription = "차량 연결 코드 10자리 입력" })
+                                ActionButton("미리 만든 여행방 연결", secondary = true) {
+                                    if (!busy && pairingCode.isNotBlank()) { busy = true; scope.launch { try { room = client.claim(pairingCode); pairingCode = ""; error = "" } catch (_: Exception) { error = "연결 코드를 확인하거나 휴대폰에서 새로 받아 주세요." } finally { busy = false } } }
+                                }
+                            } else {
+                                val invite = client.inviteUrl(room!!)
+                                Row(horizontalArrangement = Arrangement.spacedBy(24.dp), verticalAlignment = Alignment.Top) {
+                                    if (invite != null) InviteQr(invite)
+                                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        BasicText("가족을 초대해요", style = frText(20, FontWeight.Bold, Color(0xFF002C5F)))
+                                        BasicText(if (invite != null) "1. 휴대폰 카메라로 QR코드를 찍어요.\n2. 열린 화면에서 가족에게 초대 링크를 보내요.\n3. 가족이 가고 싶은 곳을 골라요." else "휴대폰으로 참여하려면 인터넷 연결이 필요해요.", style = frText(18, color = Color(0xFF344E67)))
+                                        BasicText("새로운 제안 ${proposals.size}곳", style = frText(17, FontWeight.Bold, Color(0xFF002C5F)))
+                                    }
+                                }
+                                if (!switchingRoom) {
+                                    ActionButton("휴대폰에서 만든 다른 여행방 연결", secondary = true) { switchingRoom = true; pairingCode = "" }
+                                } else {
+                                    BasicText("다른 방으로 연결하면 현재 차량 화면의 경로와 제안이 새 방의 내용으로 바뀌어요. 휴대폰의 연결 코드 10자리를 입력해 주세요.", style = frText(18, color = Color(0xFF002C5F)))
+                                    BasicTextField(value = pairingCode, onValueChange = { pairingCode = it.uppercase().take(10) }, singleLine = true, textStyle = frText(22, color = Color(0xFF002C5F)), modifier = Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(10.dp)).padding(16.dp).semantics { contentDescription = "다른 여행방 연결 코드 10자리 입력" })
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                        ActionButton("취소", secondary = true) { switchingRoom = false; pairingCode = "" }
+                                        ActionButton("현재 방을 바꾸고 연결") {
+                                            if (!busy && pairingCode.isNotBlank()) { busy = true; scope.launch { try { val next = client.claim(pairingCode); proposals = emptyList(); route = null; waypoints = emptyList(); room = next; pairingCode = ""; switchingRoom = false; error = "" } catch (_: Exception) { error = "연결 코드를 확인하거나 휴대폰에서 새로 받아 주세요." } finally { busy = false } } }
+                                        }
+                                    }
+                                }
+                                proposals.forEach { p ->
+                                    Column(Modifier.fillMaxWidth().background(Color.White, RoundedCornerShape(14.dp)).padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                                        BasicText("${p.member}님의 ${if (p.type == "COURSE") "여행 코스" else if (p.type == "DESTINATION") "목적지" else "경유지"} 제안", style = frText(17, color = Color(0xFF42576D)))
+                                        BasicText(p.place, style = frText(20, FontWeight.Bold, Color(0xFF002C5F)))
+                                        if (p.type != "COURSE") demoStraightLineDistance(p.latitude, p.longitude)?.let { BasicText("서울 시연 위치에서 직선 $it", style = frText(16, color = Color(0xFF42576D))) }
+                                        if (p.courseStops.isNotBlank()) BasicText(p.courseStops, style = frText(17, color = Color(0xFF42576D)))
+                                        if (p.votes > 0) BasicText("가족 투표 ${p.votes}명", style = frText(16, color = Color(0xFF42576D)))
+                                        if (p.message.isNotBlank()) BasicText(p.message, style = frText(17, color = Color(0xFF42576D)))
+                                        if (proposalError.isNotBlank()) BasicText(proposalError, style = frText(17, FontWeight.Bold, Color(0xFFB1291C)))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                            ActionButton(if (busy) "경로 찾는 중" else if (p.type == "COURSE") "코스를 경유지로 추가" else if (p.type == "DESTINATION") "목적지로 정하기" else "경유지로 추가") {
+                                                if (!busy && parking.allowed.value) { if (route == null && (p.type == "WAYPOINT" || p.type == "COURSE")) { proposalError = "먼저 목적지를 정해 주세요. 가족의 제안은 그대로 보관돼요." } else { busy = true; proposalError = ""; scope.launch { try { client.addToRoute(room!!, p.id); val s=client.state(room!!); proposals=s.proposals; route=s.route; panel=false; error=""; notice=if (p.type == "WAYPOINT") "${p.place}을(를) 경로에 담았어요. 지도의 주황색 표시를 확인해 주세요." else "${p.place}을(를) 여행 경로에 담았어요." } catch (_: Exception) { proposalError="추가하지 못했어요. 연결과 목적지를 확인한 뒤 다시 눌러 주세요." } finally { busy=false } } } }
+                                            }
+                                            ActionButton("다음에", secondary = true) { if (!busy) scope.launch { try { client.decide(room!!, p.id, "DECLINED"); proposals=client.state(room!!).proposals } catch (_: Exception) { error="결과를 보내지 못했어요." } } }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun PreferenceButton(label: String, selected: Boolean, onClick: () -> Unit) {
+    ActionButton(if (selected) "✓ $label" else label, secondary = !selected, modifier = Modifier.semantics { this.selected = selected }, onClick = onClick)
+}
+
+@Composable private fun ActionButton(label: String, secondary: Boolean = false, icon: Int? = null, enabled: Boolean = true, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val foreground = if (!enabled) Color(0xFF536577) else if (secondary) Color(0xFF002C5F) else Color.White
+    val background = if (!enabled) Color(0xFFD9E0E5) else if (secondary) Color(0xFFE4DCD3) else Color(0xFF002C5F)
+    Row(modifier = modifier.heightIn(min = 56.dp).background(background, RoundedCornerShape(12.dp)).clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 18.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        if (icon != null) Image(painterResource(icon), contentDescription = null, colorFilter = ColorFilter.tint(foreground), modifier = Modifier.size(24.dp))
+        BasicText(label, style = frText(19, FontWeight.Bold, foreground))
+    }
+}
+
+@Composable private fun InviteQr(url: String) {
+    val matrix = remember(url) { QRCodeWriter().encode(url, BarcodeFormat.QR_CODE, 200, 200) }
+    Canvas(Modifier.size(200.dp).background(Color.White)) {
+        val x = size.width / matrix.width; val y = size.height / matrix.height
+        for (row in 0 until matrix.height) for (col in 0 until matrix.width) if (matrix[col, row]) drawRect(Color.Black, Offset(col * x, row * y), Size(x + .3f, y + .3f))
+    }
+}
+
+@Composable private fun FamilyMap(route: LiveRoute?, modifier: Modifier) {
+    var loaded by remember { mutableStateOf(false) }
+    AndroidView(modifier = modifier, factory = { context ->
+        WebView(context).apply {
+            settings.javaScriptEnabled = true
+            settings.allowFileAccess = true
+            settings.allowContentAccess = false
+            webChromeClient = object : WebChromeClient() { override fun onConsoleMessage(message: ConsoleMessage): Boolean { Log.w("FamilyMap", "map script: ${message.message()}"); return true } }
+            webViewClient = object : WebViewClient() { override fun onPageFinished(view: WebView, url: String) { loaded = true; view.postDelayed({ val cssHeight = (view.height / view.resources.displayMetrics.density).toInt().coerceAtLeast(1); view.evaluateJavascript("window.resizeMap($cssHeight)", null) }, 300) } }
+            loadUrl("file:///android_asset/map/index.html")
+        }
+    }, update = { web -> if (loaded) { val h = (web.height / web.resources.displayMetrics.density).toInt(); if (h > 0) web.evaluateJavascript("window.resizeMap($h)", null); if (route != null) web.evaluateJavascript("window.showRoute(JSON.parse(${JSONObject.quote(route.pointsJson)}),JSON.parse(${JSONObject.quote(route.stopsJson)}))", null) } })
+}
