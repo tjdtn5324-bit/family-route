@@ -31,4 +31,4 @@ export const curatedCourses=[
   {id:'guide-gangneung-sea',title:'강릉 바다 천천히 보기',destination:p.gangneung,waypoints:[p.anmok,p.gyeongpo],preferences:prefs(['RELAX']),sourceName:'강릉 당일 여행 영상',sourceUrl:'https://www.youtube.com/watch?v=atIUbjHTxqA'},
   {id:'guide-gyeongju-history',title:'경주 천년의 풍경',destination:p.donggung,waypoints:[p.daereungwon,p.cheomseongdae],preferences:prefs(['RELAX']),sourceName:'한국관광공사 경주 여행 안내',sourceUrl:'https://korean.visitkorea.or.kr/detail/rem_detail.do?cotid=90c35e84-e7cf-4316-b122-ed2e08adb277'},
   {id:'guide-jeonju-hanok',title:'전주 한옥과 시장 구경',destination:p.hanok,waypoints:[p.gyeonggijeon,p.jeonjuMarket],preferences:prefs(['FOOD']),sourceName:'국립전주박물관 전주 여행 영상',sourceUrl:'https://www.youtube.com/watch?v=yPtVLSN6xao'},
-].map(c=>({...c,description:'시연용으로 관광 안내 자료를 참고해 만든 코스예요. 방문 전 운영 시간과 주차를 확인해 주세요.',sample:true,curated:true,createdAt:0}));
+].map(c=>({...c,sourceKind:c.sourceUrl.includes('youtube.com')?'video':'tour',description:'시연용으로 관광 안내 자료를 참고해 만든 코스예요. 방문 전 운영 시간과 주차를 확인해 주세요.',sample:true,curated:true,createdAt:0}));

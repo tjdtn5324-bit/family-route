@@ -10,15 +10,23 @@ const defaultPreferences = () => ({ companions: [], styles: [], hours: null });
 const DAY_MS = 24 * 60 * 60 * 1000;
 const TREND_WINDOW_MS = 7 * DAY_MS, TREND_HALF_LIFE_MS = 2 * DAY_MS;
 const METROS = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '제주'];
+const PROVINCES = { 경기: '경기', 강원: '강원', 충북: '충북', 충청북도: '충북', 충남: '충남', 충청남도: '충남', 전북: '전북', 전라북도: '전북', 전남: '전남', 전라남도: '전남', 경북: '경북', 경상북도: '경북', 경남: '경남', 경상남도: '경남' };
+// 다른 도에 같은 이름이 있는 시·군은 도 이름을 붙여 구분한다.
+const AMBIGUOUS = new Set(['광주', '고성']);
+const TREND_BADGE_SCORE = 3;
+const RESERVED_NAME = /운영|관리자|공식|현대|기아|가족경로/;
 
-// 코스가 속한 지역 이름. 주소의 시·도(광역시는 그대로, 도는 그 아래 시·군)를 쓴다.
+// 코스가 속한 지역 이름. 알려진 시·도 주소일 때만 값을 내고, 아니면 빈 문자열이다.
+// 주소는 사용자가 보낸 값이라 아무 글이나 지역 이름으로 화면에 올라가지 않게 한다.
 export function regionOf(place) {
   const tokens = String(place?.address || '').trim().split(/\s+/).filter(Boolean);
   const first = tokens[0] || '';
   const metro = METROS.find(m => first.startsWith(m));
   if (metro) return metro;
-  const second = (tokens[1] || '').replace(/(특별자치시|시|군)$/, '');
-  return second || first || String(place?.name || '').slice(0, 10);
+  const province = Object.keys(PROVINCES).find(p => first.startsWith(p));
+  if (!province || !/^[가-힣]{1,6}(시|군)$/.test(tokens[1] || '')) return '';
+  const city = tokens[1].replace(/(시|군)$/, '');
+  return AMBIGUOUS.has(city) ? PROVINCES[province] + ' ' + city : city;
 }
 
 function validatedPreferences(input) {
@@ -74,20 +82,21 @@ export class Rooms {
       }),
       sessions: structuredClone([...this.#sessions]),
       invites: structuredClone([...this.#invites]),
-      courses: structuredClone([...this.#courses]),
+      courses: structuredClone([...this.#courses].filter(([, c]) => !c.sample)),
       likes: [...this.#likes].map(([id, users]) => [id, [...users]]),
       reviews: [...this.#reviews].map(([id, byUser]) => [id, structuredClone([...byUser])]),
       activity: structuredClone([...this.#activity]),
     };
   }
 
-  static fromSnapshot(snapshot, { permanentMemories = false } = {}) {
+  static fromSnapshot(snapshot, { permanentMemories = false, sampleCourses = false } = {}) {
     if (!snapshot || snapshot.version !== 1 || !['rooms', 'sessions', 'invites', 'courses'].every(k => Array.isArray(snapshot[k]))) throw new Error('저장된 가족방 데이터를 읽을 수 없습니다');
-    const result = new Rooms({permanentMemories});
+    const result = new Rooms({permanentMemories, sampleCourses});
     result.#rooms = new Map(snapshot.rooms.map(([id, room]) => [id, { ...structuredClone(room), listeners: new Set() }]));
     result.#sessions = new Map(structuredClone(snapshot.sessions));
     result.#invites = new Map(structuredClone(snapshot.invites));
-    result.#courses = new Map(structuredClone(snapshot.courses));
+    // 예시·참고 코스는 코드에서 다시 채우고(위 생성자), 보관된 가족 공유 코스를 그 위에 더한다.
+    for (const [id, course] of structuredClone(snapshot.courses)) if (!course.sample) result.#courses.set(id, course);
     // 좋아요·후기·최근 활동은 나중에 추가된 항목이라 예전 저장 파일에는 없을 수 있다.
     if (Array.isArray(snapshot.likes)) result.#likes = new Map(snapshot.likes.map(([id, users]) => [id, new Set(users)]));
     if (Array.isArray(snapshot.reviews)) result.#reviews = new Map(snapshot.reviews.map(([id, entries]) => [id, new Map(structuredClone(entries))]));
@@ -115,7 +124,7 @@ export class Rooms {
     if (room.members.length >= 20) throw new Error('가족방 인원이 가득 찼습니다');
     const member = { id: randomUUID(), name: memberName };
     const memberToken = token();
-    room.members.push(member);
+    room.members.push(member); this.#touch(room);
     this.#sessions.set(memberToken, { roomId: room.id, role: 'member', ...member });
     this.#notify(room);
     return { memberToken, roomId: room.id };
@@ -158,6 +167,7 @@ export class Rooms {
     if (!pair || pair.expiresAt <= Date.now()) { this.#pairings.delete(key); throw new Error('연결 코드를 다시 확인해 주세요'); }
     this.session(pair.driverToken);
     this.#pairings.delete(key);
+    const linked = this.#rooms.get(pair.roomId); if (linked) { linked.carLinkedAt = Date.now(); this.#notify(linked); }
     return {invite:pair.invite, driverToken:pair.driverToken};
   }
 
@@ -170,7 +180,7 @@ export class Rooms {
 
   state(auth) {
     const s = this.session(auth), room = this.#rooms.get(s.roomId);
-    return { room: { id: room.id, name: room.name }, me: { id: s.id ?? null, name: s.name, role: s.role }, archiveAvailable: this.#permanentMemories, archived: !!room.archived, members: room.members, proposals: room.proposals, route: room.route, completedTrip:room.completedTrip||null, photos:(room.photos||[]).map(({id,memberId,memberName,createdAt})=>({id,memberId,memberName,createdAt})), preferences: structuredClone(room.preferences ?? defaultPreferences()), itinerary: room.route ? { version:room.routeVersion, destination: room.destination, waypoints: this.#waypoints(room).map(p => ({...p.place, proposalId:p.id})) } : null };
+    return { room: { id: room.id, name: room.name, expiresAt: room.expiresAt < 8640000000000000 ? room.expiresAt : null, carLinkedAt: room.carLinkedAt || null }, me: { id: s.id ?? null, name: s.name, role: s.role }, archiveAvailable: this.#permanentMemories, archived: !!room.archived, members: room.members, proposals: room.proposals, route: room.route, completedTrip:room.completedTrip||null, photos:(room.photos||[]).map(({id,memberId,memberName,createdAt})=>({id,memberId,memberName,createdAt})), preferences: structuredClone(room.preferences ?? defaultPreferences()), itinerary: room.route ? { version:room.routeVersion, destination: room.destination, waypoints: this.#waypoints(room).map(p => ({...p.place, proposalId:p.id})) } : null };
   }
 
   addPhoto(auth, data) {
@@ -182,7 +192,7 @@ export class Rooms {
     room.photos ||= [];
     if(room.photos.length>=8) throw new Error('한 가족방에는 사진 8장까지 올릴 수 있어요');
     const photo={id:randomUUID(),memberId:s.id,memberName:s.name,createdAt:Date.now(),data};
-    room.photos.push(photo);this.#notify(room);
+    room.photos.push(photo);this.#touch(room);this.#notify(room);
     return {id:photo.id,memberName:photo.memberName,createdAt:photo.createdAt};
   }
 
@@ -202,11 +212,17 @@ export class Rooms {
     const s=this.session(auth),room=this.#rooms.get(s.roomId);
     if(s.role!=='driver' || !room.route || !room.destination) throw new Error('종료할 여행 경로가 없어요');
     if(!['MEMORY','SHARE','SKIP'].includes(choice)) throw new Error('여행을 마칠 방법을 선택해 주세요');
-    room.completedTrip=choice==='SKIP'?null:{id:randomUUID(),destination:structuredClone(room.destination),waypoints:this.#waypoints(room).map(p=>structuredClone(p.place)),preferences:structuredClone(room.preferences),finishedAt:Date.now(),choice};
+    if (choice !== 'SKIP') room.completedTrip={id:randomUUID(),destination:structuredClone(room.destination),waypoints:this.#waypoints(room).map(p=>structuredClone(p.place)),preferences:structuredClone(room.preferences),finishedAt:Date.now(),choice};
     if (choice !== 'SKIP' && this.#permanentMemories) { room.expiresAt = 8640000000000000; room.archived = true; }
+    // 끝난 여행의 들르는 곳이 다음 여행 경로에 다시 붙지 않게 한다.
+    for (const p of room.proposals) if (p.status === 'ACCEPTED' && p.type === 'WAYPOINT') p.status = 'FINISHED';
+    this.#touch(room);
     room.route=null;room.destination=null;room.routeVersion++;this.#notify(room);
     return structuredClone(room.completedTrip);
   }
+
+  // 여행 중이거나 막 끝낸 방이 중간에 사라지지 않도록 만료 시간을 다시 12시간 뒤로 미룬다.
+  #touch(room) { if (room.expiresAt < 8640000000000000) room.expiresAt = Date.now() + ROOM_TTL_MS; }
 
   completedTrip(auth) {
     const s=this.session(auth),trip=this.#rooms.get(s.roomId).completedTrip;
@@ -242,16 +258,40 @@ export class Rooms {
     return structuredClone(preferences);
   }
 
-  publishCourse(auth, title, description, source = 'current') {
+  // exclude: 공개하지 않을 장소의 순서 번호(0부터, 마지막이 도착지). 집·숙소처럼 알리고 싶지 않은 곳을 뺀다.
+  publishCourse(auth, title, description, source = 'current', exclude = []) {
     const s = this.session(auth), room = this.#rooms.get(s.roomId);
     const courseTitle = clean(title, 80);
     if(!['current','completed'].includes(source)) throw new Error('공유할 여행을 다시 확인해 주세요');
     const trip=source==='completed' ? room.completedTrip : room.route ? {destination:room.destination,waypoints:this.#waypoints(room).map(p=>p.place),preferences:room.preferences} : room.completedTrip;
     if (!courseTitle || !trip) throw new Error('제목과 완성된 가족 경로가 필요합니다');
-    if (this.#courses.size >= 100) throw new Error('공유 코스 한도에 도달했습니다');
-    const course = { id: randomUUID(), title: courseTitle, description: clean(description, 300), destination: structuredClone(trip.destination), waypoints: structuredClone(trip.waypoints), preferences: structuredClone(trip.preferences ?? defaultPreferences()), createdAt: Date.now() };
+    if (!Array.isArray(exclude) || exclude.some(i => !Number.isInteger(i))) throw new Error('공개할 장소를 다시 골라 주세요');
+    const places = [...trip.waypoints, trip.destination].filter((_, i) => !exclude.includes(i));
+    if (!places.length) throw new Error('공개할 장소를 한 곳 이상 남겨 주세요');
+    const mine = [...this.#courses.values()].filter(c => c.ownerRoomId === room.id);
+    if (mine.length >= 3) throw new Error('한 가족방에서는 코스를 3개까지 공유할 수 있어요. 먼저 올린 코스를 내려 주세요');
+    const key = list => list.map(p => p.latitude.toFixed(5) + ',' + p.longitude.toFixed(5)).join('|');
+    if (mine.some(c => key([...c.waypoints, c.destination]) === key(places))) throw new Error('같은 장소로 이미 공유한 코스가 있어요');
+    if ([...this.#courses.values()].filter(c => !c.sample).length >= 90) throw new Error('공유 코스 한도에 도달했습니다');
+    const course = { id: randomUUID(), title: courseTitle, description: clean(description, 300), destination: structuredClone(places.at(-1)), waypoints: structuredClone(places.slice(0, -1)), preferences: structuredClone(trip.preferences ?? defaultPreferences()), createdAt: Date.now(), ownerRoomId: room.id };
     this.#courses.set(course.id, course);
-    return course;
+    return this.#summary(course, Date.now(), room.id);
+  }
+
+  // 올린 가족방의 사람만 코스를 내릴 수 있다. 좋아요·후기·인기 기록도 함께 지운다.
+  unpublishCourse(auth, id) {
+    const s = this.session(auth), course = this.#courses.get(id);
+    if (!course || course.sample || course.ownerRoomId !== s.roomId) throw new Error('이 가족방에서 올린 코스만 내릴 수 있어요');
+    this.#courses.delete(id); this.#likes.delete(id); this.#reviews.delete(id); this.#activity.delete(id);
+  }
+
+  // 신고는 로그인한 계정당 한 번. 서로 다른 3명이 신고하면 목록에서 숨긴다.
+  reportCourse(userId, id) {
+    const course = this.#courses.get(id);
+    if (!course || course.sample) throw new Error('신고할 수 없는 코스예요');
+    course.reports = [...new Set([...(course.reports || []), userId])];
+    if (course.reports.length >= 3) course.hidden = true;
+    return { reported: true, hidden: !!course.hidden };
   }
 
   courses(auth, query = '') {
@@ -260,58 +300,71 @@ export class Rooms {
   }
 
   // 최근 7일의 좋아요(1)·후기(2)·실제 길 안내에 쓰임(3)을 더하고, 이틀마다 절반으로 줄인다.
-  #bump(id, weight) {
-    const events = this.#activity.get(id) || [];
-    events.push({ t: Date.now(), w: weight });
+  #bump(id, weight, key) {
+    const now = Date.now(), events = (this.#activity.get(id) || []).filter(e => now - e.t <= TREND_WINDOW_MS);
+    if (events.some(e => e.k === key)) { this.#activity.set(id, events); return; }
+    events.push({ t: now, w: weight, k: key });
     this.#activity.set(id, events.slice(-300));
+  }
+  #unbump(id, key) {
+    const events = this.#activity.get(id);
+    if (events) this.#activity.set(id, events.filter(e => e.k !== key));
   }
   #trend(id, now = Date.now()) {
     let score = 0;
     for (const e of this.#activity.get(id) || []) if (now - e.t <= TREND_WINDOW_MS) score += e.w * 0.5 ** ((now - e.t) / TREND_HALF_LIFE_MS);
     return Math.round(score * 100) / 100;
   }
-  #summary(c, now = Date.now()) {
+  // 공개 목록에 내보내는 모양. 올린 가족방과 신고 기록은 내보내지 않는다. 여행 취향 태그는 코스를 고르는 데 쓰여 함께 공개된다.
+  #summary(c, now = Date.now(), roomId = null) {
     const reviews = [...(this.#reviews.get(c.id)?.values() || [])];
     const rating = reviews.length ? Math.round(reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length * 10) / 10 : null;
-    return { ...c, likes: this.#likes.get(c.id)?.size || 0, reviewCount: reviews.length, rating, trendScore: this.#trend(c.id, now), region: regionOf(c.destination), official: !!c.curated };
+    const { ownerRoomId, reports, hidden, ...shown } = c;
+    const trendScore = this.#trend(c.id, now);
+    return { ...shown, likes: this.#likes.get(c.id)?.size || 0, reviewCount: reviews.length, rating, trendScore, trending: trendScore >= TREND_BADGE_SCORE, region: regionOf(c.destination), official: !!c.curated, mine: roomId !== null && ownerRoomId === roomId };
   }
 
   // sort: popular(좋아요순, 기본) | trending(요즘 인기) | new(새로 올라온). kind: community(가족 공유) | official(관광 안내 참고).
-  publicCourses(query = '', { sort = 'popular', kind = '' } = {}) {
+  publicCourses(query = '', { sort = 'popular', kind = '', roomId = null } = {}) {
     const q = clean(query, 80).toLocaleLowerCase(), now = Date.now();
     const base = (a, b) => Number(!!a.sample) - Number(!!b.sample) || b.likes - a.likes || b.createdAt - a.createdAt;
     const order = sort === 'trending' ? (a, b) => b.trendScore - a.trendScore || base(a, b) : sort === 'new' ? (a, b) => Number(!!a.sample) - Number(!!b.sample) || b.createdAt - a.createdAt : base;
     return [...this.#courses.values()]
+      .filter(c => !c.hidden || (roomId !== null && c.ownerRoomId === roomId))
       .filter(c => kind === 'official' ? !!c.curated : kind === 'community' ? !c.sample : true)
       .filter(c => !q || [c.title, c.description, c.destination.name, c.destination.address || '', ...c.waypoints.flatMap(p => [p.name, p.address || ''])].some(v => v.toLocaleLowerCase().includes(q)))
-      .map(c => this.#summary(c, now)).sort(order);
+      .map(c => this.#summary(c, now, roomId)).sort(order);
   }
+  /** 가족방 토큰이 유효하면 그 방의 id, 아니면 null. 공개 목록에서 '내가 올린 코스'를 표시하는 데 쓴다. */
+  roomIdOf(auth) { return this.#sessions.get(auth)?.roomId ?? null; }
 
   // 요즘 앱 안에서 활동이 많은 지역과 코스. 앱 밖의 실제 관광객 수가 아니다.
   trending() {
     const all = this.publicCourses('', { sort: 'trending' }), regions = new Map();
     for (const c of all) {
-      const r = regions.get(c.region) || { region: c.region, score: 0, courses: 0 };
-      r.score = Math.round((r.score + c.trendScore) * 100) / 100; r.courses++; regions.set(c.region, r);
+      if (!c.region) continue;
+      const r = regions.get(c.region) || { region: c.region, score: 0, courses: 0, known: false };
+      r.score = Math.round((r.score + c.trendScore) * 100) / 100; r.courses++; r.known ||= !!c.sample; regions.set(c.region, r);
     }
-    return { regions: [...regions.values()].sort((a, b) => b.score - a.score || b.courses - a.courses).slice(0, 8), courses: all.filter(c => c.trendScore > 0).slice(0, 5) };
+    return { regions: [...regions.values()].filter(r => r.known || r.courses >= 2).map(({ known, ...r }) => r).sort((a, b) => b.score - a.score || b.courses - a.courses).slice(0, 8), courses: all.filter(c => c.trending).slice(0, 5) };
   }
 
   // 후기는 계정당 코스별 하나. 다시 쓰면 고쳐진다. 화면에는 이름만 보이고 계정 정보는 내보내지 않는다.
   reviewCourse(userId, id, input) {
     const course = this.#courses.get(id);
     if (!course || (course.sample && !course.curated)) throw new Error('후기를 남길 수 없는 코스예요');
-    const rating = input?.rating, text = clean(input?.text, 300), name = clean(input?.name, 20) || '여행자';
+    const rating = input?.rating, text = clean(input?.text, 300), typed = clean(input?.name, 20);
+    const name = !typed || RESERVED_NAME.test(typed) ? '여행자' : typed;
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('별점을 1점부터 5점 사이로 골라 주세요');
     let byUser = this.#reviews.get(id); if (!byUser) { byUser = new Map(); this.#reviews.set(id, byUser); }
     const existing = byUser.get(userId);
     if (!existing && byUser.size >= 200) throw new Error('이 코스의 후기 한도에 도달했어요');
     byUser.set(userId, { name, rating, text, createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now() });
-    if (!existing) this.#bump(id, 2);
+    this.#bump(id, 2, 'review:' + userId);
     return this.courseReviews(id, userId);
   }
   deleteReview(userId, id) {
-    this.#reviews.get(id)?.delete(userId);
+    this.#reviews.get(id)?.delete(userId); this.#unbump(id, 'review:' + userId);
     return this.courseReviews(id, userId);
   }
   courseReviews(id, userId = null) {
@@ -328,8 +381,7 @@ export class Rooms {
     if(typeof liked!=='boolean') throw new Error('좋아요 상태를 확인해 주세요');
     let likes=this.#likes.get(id);if(!likes){likes=new Set();this.#likes.set(id,likes)}
     if(liked && !likes.has(userId) && likes.size>=1000) throw new Error('좋아요 한도에 도달했어요');
-    if(liked && !likes.has(userId)) this.#bump(id, 1);
-    if(liked)likes.add(userId);else likes.delete(userId);
+    if(liked) { likes.add(userId); this.#bump(id, 1, 'like:' + userId); } else { likes.delete(userId); this.#unbump(id, 'like:' + userId); }
     return {likes:likes.size,liked};
   }
 
@@ -365,6 +417,7 @@ export class Rooms {
     const s = this.session(auth), room = this.#rooms.get(s.roomId);
     if (s.role !== 'driver' || room.routeVersion !== version) throw new Error('경로가 변경됐어요. 다시 시도해 주세요');
     for (const p of room.proposals) if (p.status === 'ACCEPTED' && p.type === 'WAYPOINT') p.status = 'REPLACED';
+    this.#touch(room);
     room.destination = destination; room.route = { ...route, destinationName: destination.name }; room.routeVersion++; this.#notify(room);
   }
 
@@ -452,10 +505,11 @@ export class Rooms {
         room.proposals.push({ id: randomUUID(), type: 'WAYPOINT', member: proposal.member, place, message: proposal.course.title, status: 'ACCEPTED', waypointOrder:this.#waypoints(room).length, votes: {}, createdAt: Date.now() });
       }
       if (!add) room.destination = proposal.course.destination;
-      const shared = this.#courses.get(proposal.course.id); if (shared) { shared.uses = (shared.uses || 0) + 1; this.#bump(shared.id, 3); }
+      const shared = this.#courses.get(proposal.course.id); if (shared) { shared.uses = (shared.uses || 0) + 1; this.#bump(shared.id, 3, 'use:' + room.id); }
     }
     if (proposal.type === 'WAYPOINT') proposal.waypointOrder = this.#waypoints(room).length;
     proposal.status = 'ACCEPTED'; if (proposal.type === 'DESTINATION') room.destination = proposal.place;
+    this.#touch(room);
     room.route = { ...route, destinationName: room.destination.name }; room.routeVersion++; this.#notify(room);
   }
 
@@ -467,7 +521,11 @@ export class Rooms {
     if (!['WAYPOINT','DESTINATION'].includes(type)) throw new Error('제안 종류를 확인해 주세요');
     const name = clean(place?.name, 100), lat = place?.latitude, lon = place?.longitude;
     if (!name || typeof lat !== 'number' || typeof lon !== 'number' || !Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) throw new Error('장소와 좌표를 확인해 주세요');
+    // 신호가 약해 같은 버튼을 다시 눌러도 같은 제안이 두 번 올라가지 않게 한다.
+    const same = room.proposals.find(p => p.status === 'PENDING' && p.type === type && !p.course && p.member.id === s.id && p.place.latitude === lat && p.place.longitude === lon);
+    if (same && !allowDriver) return same;
     const proposal = { id: randomUUID(), type, member: { id: s.id, name: s.name }, place: { name, latitude: lat, longitude: lon, address: clean(place.address, 200) }, message: clean(message, 200), status: 'PENDING', votes: {}, createdAt: Date.now() };
+    this.#touch(room);
     room.proposals.push(proposal); this.#notify(room); return proposal;
   }
 
@@ -475,7 +533,7 @@ export class Rooms {
     const s = this.session(auth), room = this.#rooms.get(s.roomId);
     const proposal = room.proposals.find((p) => p.id === id);
     if (s.role !== 'member' || !proposal || proposal.status !== 'PENDING' || !['YES', 'NO'].includes(choice)) throw new Error('투표할 수 없는 제안입니다');
-    proposal.votes[s.id] = choice; this.#notify(room);
+    proposal.votes[s.id] = choice; this.#touch(room); this.#notify(room);
   }
 
   decide(auth, id, decision) {

@@ -14,5 +14,6 @@ if (anyConfigured && !/^https:\/\/[a-z0-9-]+\.auth\.[a-z0-9-]+\.amazoncognito\.c
 const profile = anyConfigured ? { config:{clientId,domain,region}, verify:createIdentityVerifier({region,userPoolId:pool,clientId}), store:createSavedPlaceStore({region,tableName:table}) } : null;
 const archive = process.env.FAMILY_LOCAL_ARCHIVE_DIR ? openLocalArchive(process.env.FAMILY_LOCAL_ARCHIVE_DIR) : null;
 const snapshot = archive?.load();
-const rooms = snapshot ? Rooms.fromSnapshot(snapshot,{permanentMemories:true}) : new Rooms({sampleCourses:process.env.FAMILY_SAMPLE_COURSES==='1',permanentMemories:!!archive});
+const sampleCourses = process.env.FAMILY_SAMPLE_COURSES==='1';
+const rooms = snapshot ? Rooms.fromSnapshot(snapshot,{permanentMemories:true,sampleCourses}) : new Rooms({sampleCourses,permanentMemories:!!archive});
 createApp({profile,rooms,persist:archive?.save}).listen(port, '127.0.0.1', () => console.log(`개발 서버: http://127.0.0.1:${port} (이 PC에서만 접속)`));

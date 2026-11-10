@@ -17,13 +17,14 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
       const source = req.socket.remoteAddress || 'unknown';
       const forwarded = source === '127.0.0.1' || source === '::1' || source === '::ffff:127.0.0.1' ? req.headers['cf-connecting-ip'] : null;
       const ip = typeof forwarded === 'string' && forwarded.length < 80 ? forwarded : source;
-      const category = ['/api/places','/api/profile/search'].includes(url.pathname) ? 'search' : ['/api/rooms','/api/rooms/prepare','/api/rooms/claim','/api/join','/api/join-code'].includes(url.pathname) ? 'create' : 'general';
+      const communityWrite = ['POST','DELETE'].includes(req.method) && (url.pathname === '/api/courses' || /^\/api\/courses\/[^/]+(\/(like|reviews|report))?$/.test(url.pathname));
+      const category = ['/api/places','/api/profile/search'].includes(url.pathname) ? 'search' : ['/api/rooms','/api/rooms/prepare','/api/rooms/claim','/api/join','/api/join-code'].includes(url.pathname) ? 'create' : communityWrite ? 'write' : 'general';
       const key = `${ip}:${category}`;
       if (limits.size > 10000) for (const [k, v] of limits) if (v.until <= now) limits.delete(k);
       if (limits.size > 10000 && !limits.has(key)) return send(429, { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요' });
       let bucket = limits.get(key);
       if (!bucket || bucket.until <= now) { bucket = { count: 0, until: now + 60000 }; limits.set(key, bucket); }
-      if (++bucket.count > (category === 'create' ? 5 : category === 'search' ? 30 : 240)) return send(429, { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요' });
+      if (++bucket.count > (category === 'create' ? 5 : category === 'write' ? 20 : category === 'search' ? 30 : 240)) return send(429, { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요' });
       const auth = (req.headers.authorization || '').replace(/^Bearer /, '');
       // 새 통합 휴대폰 화면. FAMILY_OLD_UI=1이면 아래의 예전 세 화면을 그대로 쓴다.
       if (req.method === 'GET' && ['/', '/courses', '/account'].includes(url.pathname) && process.env.FAMILY_OLD_UI !== '1') {
@@ -115,7 +116,7 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
       if (req.method === 'POST' && url.pathname === '/api/preferences') return send(200, { preferences: rooms.setPreferences(auth, await body()) });
       if (req.method === 'GET' && url.pathname === '/api/places') { rooms.session(auth); return send(200, { places: await search(url.searchParams.get('q'), { apiKey }) }); }
       if (req.method === 'GET' && url.pathname === '/api/courses') return send(200, { courses: rooms.courses(auth, url.searchParams.get('q')) });
-      if (req.method === 'GET' && url.pathname === '/api/public/courses') return send(200, { courses: rooms.publicCourses(url.searchParams.get('q'), { sort: url.searchParams.get('sort') || 'popular', kind: url.searchParams.get('kind') || '' }) });
+      if (req.method === 'GET' && url.pathname === '/api/public/courses') return send(200, { courses: rooms.publicCourses(url.searchParams.get('q'), { sort: url.searchParams.get('sort') || 'popular', kind: url.searchParams.get('kind') || '', roomId: rooms.roomIdOf(auth) }) });
       if (req.method === 'GET' && url.pathname === '/api/public/trending') return send(200, rooms.trending());
       // 후기: 읽기는 누구나, 쓰기와 지우기는 로그인한 본인만.
       const reviews = url.pathname.match(/^\/api\/courses\/([^/]+)\/reviews$/);
@@ -129,7 +130,16 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
         return send(200, req.method === 'POST' ? rooms.reviewCourse(userId, reviews[1], await body()) : rooms.deleteReview(userId, reviews[1]));
       }
       if (req.method === 'GET' && url.pathname === '/api/recommended-courses') return send(200, { courses: rooms.recommendedCourses(auth, Number(url.searchParams.get('latitude')), Number(url.searchParams.get('longitude'))) });
-      if (req.method === 'POST' && url.pathname === '/api/courses') { const b = await body(); return send(201, rooms.publishCourse(auth, b.title, b.description, b.source)); }
+      if (req.method === 'POST' && url.pathname === '/api/courses') { const b = await body(); return send(201, rooms.publishCourse(auth, b.title, b.description, b.source, b.exclude ?? [])); }
+      // 올린 가족방만 코스를 내릴 수 있다. 신고는 로그인한 계정당 한 번이다.
+      const ownCourse = url.pathname.match(/^\/api\/courses\/([a-f0-9-]{36})$/);
+      if (req.method === 'DELETE' && ownCourse) { rooms.unpublishCourse(auth, ownCourse[1]); return send(200, { ok: true }); }
+      const report = url.pathname.match(/^\/api\/courses\/([^/]+)\/report$/);
+      if (req.method === 'POST' && report) {
+        if (!profile) return send(503, { error: '로그인을 준비하고 있어요' });
+        let userId; try { userId = await profile.verify(auth); } catch { return send(401, { error: '로그인 후 신고할 수 있어요' }); }
+        await body(); return send(200, rooms.reportCourse(userId, report[1]));
+      }
       const course = url.pathname.match(/^\/api\/courses\/([^/]+)\/propose$/);
       if (req.method === 'POST' && course) { await body(); return send(201, rooms.proposeCourse(auth, course[1])); }
       const like=url.pathname.match(/^\/api\/courses\/([^/]+)\/like$/);
@@ -165,7 +175,7 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
         return;
       }
       send(404, { error: '찾을 수 없습니다' });
-    } catch (error) { if (!res.headersSent) send(400, { error: error.message }); else res.end(); }
+    } catch (error) { if (!res.headersSent) send(400, { error: error instanceof SyntaxError ? '요청 형식을 확인해 주세요' : error.message }); else res.end(); }
   });
   server.headersTimeout = 10000;
   server.requestTimeout = 20000;

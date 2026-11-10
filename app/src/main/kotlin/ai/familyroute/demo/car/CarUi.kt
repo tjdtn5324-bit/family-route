@@ -65,11 +65,11 @@ fun T(text: String, size: Int, weight: FontWeight = FontWeight.Normal, color: Co
 
 enum class Btn { Primary, Soft, Line, Danger, OnNavy, OnNavyStrong }
 
-/** 차량용 큰 버튼. 높이 64dp 이상. */
+/** 차량용 큰 버튼. 높이 72dp 이상. */
 @Composable
 fun CarButton(label: String, modifier: Modifier = Modifier, kind: Btn = Btn.Primary, enabled: Boolean = true, icon: Int? = null, onClick: () -> Unit) {
     val (bg, fg) = when {
-        !enabled -> Color(0xFFD9E0E5) to Color(0xFF6B7C8C)
+        !enabled -> Color(0xFFD9E0E5) to Color(0xFF55636F)
         kind == Btn.Soft -> CarColors.Tint to CarColors.Navy
         kind == Btn.Line -> Color.White to CarColors.Navy
         kind == Btn.Danger -> CarColors.BadBg to CarColors.Bad
@@ -79,7 +79,7 @@ fun CarButton(label: String, modifier: Modifier = Modifier, kind: Btn = Btn.Prim
     }
     val shape = RoundedCornerShape(16.dp)
     Row(
-        modifier.heightIn(min = 64.dp).clip(shape).background(bg)
+        modifier.heightIn(min = 72.dp).clip(shape).background(bg)
             .then(if (kind == Btn.Line && enabled) Modifier.border(2.dp, Color(0xFFB3C1CD), shape) else Modifier)
             .clickable(enabled = enabled, role = Role.Button, onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally)
@@ -150,7 +150,7 @@ fun Segmented(options: List<String>, selectedIndex: Int, onSelect: (Int) -> Unit
 @Composable
 fun Choice(label: String, on: Boolean, onClick: () -> Unit) {
     T(label, 19, FontWeight.Bold, if (on) Color.White else CarColors.Navy,
-        Modifier.clip(RoundedCornerShape(50)).background(if (on) CarColors.Navy else CarColors.Tint).clickable(role = Role.Checkbox, onClick = onClick).semantics { selected = on }.padding(horizontal = 20.dp, vertical = 14.dp), maxLines = 1)
+        Modifier.clip(RoundedCornerShape(50)).background(if (on) CarColors.Navy else CarColors.Tint).clickable(role = Role.Checkbox, onClick = onClick).semantics { selected = on }.padding(horizontal = 22.dp, vertical = 19.dp), maxLines = 1)
 }
 
 @Composable

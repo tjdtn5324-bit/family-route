@@ -11,7 +11,7 @@
 <style>
 :root{--navy:#002c5f;--navy2:#0b3f7a;--ink:#1c3550;--sub:#55687a;--line:#dde4ea;--bg:#f3f5f8;--card:#fff;--tint:#eaf1f7;--teal:#007fa3;--ok:#00664c;--okbg:#e4f5ee;--bad:#a32216;--badbg:#fdecea;--warm:#fff3dc;--warmink:#774900}
 *{box-sizing:border-box}
-html{-webkit-text-size-adjust:100%}
+html{-webkit-text-size-adjust:auto}
 body{margin:0;background:var(--bg);color:var(--navy);font:18px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;-webkit-tap-highlight-color:transparent}
 [hidden]{display:none!important}
 h1,h2,h3,p{margin:0}
@@ -54,7 +54,7 @@ button{font:inherit;cursor:pointer;border:0}
 .chip{display:inline-flex;align-items:center;min-height:36px;padding:4px 13px;border-radius:999px;background:var(--tint);color:var(--navy);font-size:15px;font-weight:700}
 button.chip{min-height:46px;font-size:16px;padding:6px 16px}
 button.chip[aria-pressed=true]{background:var(--navy);color:#fff}
-.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:14px;font-weight:700;background:var(--tint);color:var(--teal)}
+.tag{display:inline-block;padding:3px 10px;border-radius:999px;font-size:14px;font-weight:700;background:var(--tint);color:var(--navy)}
 .tag.warm{background:var(--warm);color:var(--warmink)}
 .tag.ok{background:var(--okbg);color:var(--ok)}
 .tag.gray{background:#eceff2;color:var(--sub)}
@@ -156,6 +156,7 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
         <span class="tag" id="roomTag">함께 준비하는 여행</span>
         <h2 id="roomName" style="margin-top:8px"></h2>
         <div class="chips" id="memberChips"></div>
+        <p class="note warm" id="roomExpiry" hidden></p>
         <div class="row"><button class="btn" id="inviteBtn" type="button"></button><button class="btn soft" id="pairBtn" type="button"></button></div>
       </section>
       <section class="card" id="finishedCard" hidden>
@@ -305,7 +306,13 @@ function openSheet(title, build) {
 function closeSheet() { if ($('sheet').open) $('sheet').close(); }
 $('sheetClose').append(icon('x'));
 $('sheetClose').onclick = closeSheet;
-$('sheet').addEventListener('click', e => { if (e.target === $('sheet')) closeSheet(); });
+$('sheet').addEventListener('click', e => {
+  if (e.target !== $('sheet')) return;
+  const box = $('sheet').getBoundingClientRect();
+  const outside = e.clientX < box.left || e.clientX > box.right || e.clientY < box.top || e.clientY > box.bottom;
+  const typing = [...$('sheetBody').querySelectorAll('textarea, input[type=text]')].some(x => x.value.trim());
+  if (outside && !typing) closeSheet();
+});
 $('sheet').addEventListener('close', () => { const done = sheetDone; sheetDone = null; if (done) done(false); });
 function confirmSheet(title, message, okLabel, danger) {
   return new Promise(resolve => {
@@ -334,8 +341,8 @@ const signedIn = () => !!local.get(ACCESS);
 async function send(path, { method = 'GET', data, token, headers } = {}) {
   let r;
   try {
-    r = await fetch(path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...headers }, body: data ? JSON.stringify(data) : undefined });
-  } catch { throw Error('인터넷 연결을 확인해 주세요.'); }
+    r = await fetch(path, { method, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}), ...headers }, body: data ? JSON.stringify(data) : undefined, signal: AbortSignal.timeout ? AbortSignal.timeout(8000) : undefined });
+  } catch { throw Error('연결이 느리거나 끊겼어요. 잠시 후 다시 눌러 주세요.'); }
   let body = {};
   try { body = await r.json(); } catch {}
   return { ok: r.ok, status: r.status, body };
@@ -346,22 +353,30 @@ async function roomApi(path, method = 'GET', data) {
   if (!r.ok) throw Error(r.body.error || '요청을 처리하지 못했어요.');
   return r.body;
 }
+// 결과: 'ok'(새로 받음) | 'invalid'(로그인이 끝남) | 'offline'(연결 문제라 알 수 없음)
 async function refreshLogin() {
   const refresh = local.get(REFRESH);
-  if (!refresh || !config.enabled) return false;
+  if (!refresh) return 'invalid';
+  if (!config.enabled) { try { const c = await send('/api/profile/config'); if (c.ok) config = c.body; } catch {} }
+  if (!config.enabled) return 'offline';
   try {
     const r = await fetch(config.domain + '/oauth2/token', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', client_id: config.clientId, refresh_token: refresh }) });
     const v = await r.json();
-    if (!r.ok || !v.access_token) return false;
+    if (r.status >= 400 && r.status < 500) return 'invalid';
+    if (!r.ok || !v.access_token) return 'offline';
     local.set(ACCESS, v.access_token);
     if (v.refresh_token) local.set(REFRESH, v.refresh_token);
-    return true;
-  } catch { return false; }
+    return 'ok';
+  } catch { return 'offline'; }
 }
 async function profileApi(path, method = 'GET', data, headers) {
   if (!signedIn()) throw Error('로그인이 필요해요.');
   let r = await send(path, { method, data, headers, token: local.get(ACCESS) });
-  if (r.status === 401 && await refreshLogin()) r = await send(path, { method, data, headers, token: local.get(ACCESS) });
+  if (r.status === 401) {
+    const renewed = await refreshLogin();
+    if (renewed === 'offline') throw Error('연결이 느리거나 끊겼어요. 잠시 후 다시 눌러 주세요.');
+    if (renewed === 'ok') r = await send(path, { method, data, headers, token: local.get(ACCESS) });
+  }
   if (r.status === 401) { forgetLogin(); renderMine(); throw Error('로그인이 만료됐어요. 내 장소에서 다시 로그인해 주세요.'); }
   if (!r.ok) throw Error(r.body.error || '요청을 처리하지 못했어요.');
   return r.body;
@@ -420,7 +435,8 @@ function enterRoom(token, invite) {
   room = { token, invite: invite || '' };
   tab.set('family-route-member', token);
   if (invite) tab.set('family-route-invite', invite);
-  state = null; remembered = ''; sig = {}; photoCache.clear();
+  state = null; remembered = ''; sig = {}; photoCache.clear(); lastStatus = new Map(); carLinkSeen = undefined;
+  closeSheet(); renderAll();
   poll();
 }
 function leaveRoom(message) {
@@ -442,14 +458,22 @@ async function poll() {
         renderAll();
       } catch (e) {
         if (run !== pollRun) return;
-        if (e.message === '가족방에 다시 참여해 주세요') { leaveRoom('이 가족방은 만료됐어요. 새로 만들거나 초대 링크를 다시 받아 주세요.'); return; }
+        if (e.message === '가족방에 다시 참여해 주세요') {
+          const dead = room.token; history_ = history_.filter(x => x.token !== dead); saveHistory().catch(() => {});
+          leaveRoom('가족방이 닫혔어요. 새 가족방을 만들어 가족을 다시 초대해 주세요.'); return;
+        }
         online = false; renderBar();
       }
     }
     await new Promise(r => setTimeout(r, 2500));
   }
 }
-async function refreshNow() { if (room.token) { state = await roomApi('/api/state'); renderAll(); } }
+async function refreshNow() {
+  const token = room.token; if (!token) return;
+  const next = await roomApi('/api/state');
+  if (token !== room.token) return;
+  state = next; renderAll();
+}
 
 function createForm(box, prefix) {
   const name = h('input', { type: 'text', id: prefix + 'Trip', maxlength: 60, placeholder: '예: 우리 가족 부산 여행' });
@@ -512,7 +536,8 @@ function renderBar() {
 function emptyBox(iconName, message, action) { return h('div', { class: 'empty' }, icon(iconName), h('p', { text: message }), action || null); }
 
 // ───────── 그리기: 우리 여행 ─────────
-const STATUS = { PENDING: ['운전자 결정 대기', ''], ACCEPTED: ['여행 경로에 담겼어요', 'ok'], REMOVED: ['경로에서 빠졌어요', 'gray'], REPLACED: ['경로가 바뀌었어요', 'gray'], DECLINED: ['이번에는 지나가요', 'gray'] };
+const STATUS = { PENDING: ['운전자 결정 대기', ''], ACCEPTED: ['여행 경로에 담겼어요', 'ok'], REMOVED: ['경로에서 빠졌어요', 'gray'], REPLACED: ['경로가 바뀌었어요', 'gray'], DECLINED: ['이번에는 가지 않아요', 'gray'], FINISHED: ['다녀왔어요', 'gray'] };
+let lastStatus = new Map(), carLinkSeen;
 function renderHome() {
   const inRoom = !!state;
   $('onboard').hidden = inRoom || (!!room.token && !pendingInvite);
@@ -525,12 +550,22 @@ function renderHome() {
     return;
   }
   const s = state;
-  if (changed('room', [s.room.name, s.members, s.completedTrip?.id])) {
+  const hoursLeft = s.room.expiresAt ? (s.room.expiresAt - Date.now()) / 3600000 : null;
+  const closing = hoursLeft !== null && hoursLeft < 2;
+  if (carLinkSeen !== undefined && s.room.carLinkedAt && s.room.carLinkedAt !== carLinkSeen) { closeSheet(); toast('차량과 연결됐어요.'); }
+  carLinkSeen = s.room.carLinkedAt || null;
+  if (changed('room', [s.room.name, s.members, s.completedTrip?.id, !!s.itinerary, closing, !!s.room.carLinkedAt])) {
+    $('roomExpiry').hidden = !closing;
+    if (closing) $('roomExpiry').textContent = '이 가족방은 ' + new Date(s.room.expiresAt).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + '쯤 닫혀요. 제안이나 사진을 올리면 12시간 더 열려 있어요.';
+    $('pairBtn').lastChild.textContent = s.room.carLinkedAt ? '차량 연결됨' : '차량 연결';
     $('roomName').textContent = s.room.name;
     $('roomTag').textContent = s.itinerary ? '여행 중' : s.completedTrip ? '다녀온 여행' : '함께 준비하는 여행';
     $('memberChips').replaceChildren(...s.members.map(m => h('span', { class: 'chip', text: m.name + (m.id === s.me.id ? ' (나)' : '') })));
   }
   $('finishedCard').hidden = !s.completedTrip;
+  if (s.completedTrip?.choice === 'SHARE' && !s.itinerary && local.get('family-route-share-asked') !== s.completedTrip.id && !$('sheet').open && currentTab === 'home') {
+    local.set('family-route-share-asked', s.completedTrip.id); openPublish();
+  }
   if (s.completedTrip) $('finishedTitle').textContent = s.completedTrip.destination.name + ' 여행';
 
   if (changed('itinerary', [s.itinerary, s.completedTrip?.id, s.proposals.map(p => [p.id, p.status])])) {
@@ -554,12 +589,19 @@ function renderHome() {
 
   if (changed('proposals', [s.proposals, s.me.id])) {
     const box = $('proposals'), pending = s.proposals.filter(p => p.status === 'PENDING'), done = s.proposals.filter(p => p.status !== 'PENDING');
+    const wasOpen = box.querySelector('details')?.open;
+    for (const p of s.proposals) {
+      const before = lastStatus.get(p.id);
+      if (before === 'PENDING' && p.member?.id === s.me.id && p.status === 'ACCEPTED') toast('운전자가 ' + eul(p.course?.title || p.place.name) + ' 경로에 담았어요.');
+      if (before === 'PENDING' && p.member?.id === s.me.id && p.status === 'DECLINED') toast((p.course?.title || p.place.name) + ' · 이번에는 가지 않기로 했어요.');
+      lastStatus.set(p.id, p.status);
+    }
     box.replaceChildren();
     if (!s.proposals.length) box.append(emptyBox('heart', '아직 제안이 없어요. 먼저 가고 싶은 곳을 알려 주세요.'));
     for (const p of pending) box.append(proposalItem(p, s));
     if (done.length) {
       const more = h('details', { class: 'more' }, h('summary', { text: '결정된 제안 ' + done.length + '개 보기' }));
-      if (!pending.length) more.open = true;
+      if (!pending.length || wasOpen) more.open = true;
       for (const p of done.slice().reverse()) more.append(proposalItem(p, s));
       box.append(more);
     }
@@ -612,10 +654,12 @@ function renderPhotos(s) {
   }
 }
 async function compressPhoto(file) {
-  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 12 * 1024 * 1024) throw Error('JPG, PNG, WEBP 사진만 올릴 수 있어요.');
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw Error('JPG, PNG, WEBP 사진만 올릴 수 있어요.');
+  if (file.size > 12 * 1024 * 1024) throw Error('사진 파일이 너무 커요(12MB까지).');
   const url = URL.createObjectURL(file);
   try {
-    const img = new Image(); img.src = url; await img.decode();
+    const img = new Image(); img.src = url;
+    try { await img.decode(); } catch { throw Error('이 사진은 열 수 없어요. 다른 사진을 골라 주세요.'); }
     const scale = Math.min(1, 960 / Math.max(img.naturalWidth, img.naturalHeight)), canvas = document.createElement('canvas');
     canvas.width = Math.max(1, Math.round(img.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(img.naturalHeight * scale));
     canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -624,14 +668,18 @@ async function compressPhoto(file) {
   } finally { URL.revokeObjectURL(url); }
 }
 $('photoFile').onchange = async () => {
-  const files = [...$('photoFile').files]; $('photoFile').value = '';
-  let done = 0;
+  const picked = [...$('photoFile').files]; $('photoFile').value = '';
+  const room_ = Math.max(0, 8 - (state?.photos?.length || 0)), files = picked.slice(0, room_);
+  if (!files.length) { toast('사진이 8장으로 가득 찼어요. 올린 사진을 지우면 더 올릴 수 있어요.', true); return; }
+  let done = 0, failed = picked.length - files.length, reason = failed ? '8장까지만 올릴 수 있어요.' : '';
   for (const [i, file] of files.entries()) {
     toast('사진 올리는 중 ' + (i + 1) + '/' + files.length);
     try { await roomApi('/api/photos', 'POST', { data: await compressPhoto(file) }); done++; }
-    catch (e) { toast(e.message, true); break; }
+    catch (e) { failed++; reason = e.message; }
   }
-  if (done) { await refreshNow().catch(() => {}); if (done === files.length) toast('사진 ' + done + '장을 올렸어요.'); }
+  if (done) await refreshNow().catch(() => {});
+  if (failed) toast('사진 ' + done + '장을 올렸고 ' + failed + '장은 올리지 못했어요. ' + reason, true);
+  else toast('사진 ' + done + '장을 올렸어요.');
 };
 function openViewer(photo, s) {
   $('viewerImg').removeAttribute('src'); $('viewerImg').alt = photo.memberName + '님이 올린 사진';
@@ -682,9 +730,9 @@ $('openAccessHelp').onclick=accessHelp;
 async function pairCar() {
   const r = await roomApi('/api/rooms/pairing', 'POST', {});
   openSheet('차량에 연결하기', body => body.append(
-    h('p', { class: 'sub', text: '차량 화면의 ‘미리 만든 여행방 연결’에 이 코드를 입력해 주세요.' }),
+    h('p', { class: 'sub', text: '차량 화면의 ‘가족’ 메뉴에서 이 코드를 입력해 주세요. 연결되면 이 창이 닫혀요.' }),
     h('p', { class: 'code', text: r.code.replace(/(.{5})/, '$1 '), 'aria-label': '연결 코드 ' + r.code.split('').join(' ') }),
-    h('p', { class: 'sub', text: '10분 안에 한 번만 쓸 수 있어요. 지나면 다시 받아 주세요.', style: 'text-align:center' })
+    h('p', { class: 'sub', text: new Date(Date.now() + 10 * 60000).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + '까지 한 번만 쓸 수 있어요. 코드를 새로 받으면 앞의 코드는 못 써요.', style: 'text-align:center' })
   ));
 }
 $('inviteBtn').replaceWith(Object.assign(btn('가족 초대', shareInvite, '', 'share'), { id: 'inviteBtn' }));
@@ -713,25 +761,32 @@ function openPublish() {
   if (!trip) return;
   openSheet('우리 코스 공유하기', body => {
     const title = h('input', { type: 'text', id: 'pubTitle', maxlength: 80, placeholder: '예: 가성비 부산 여행' }), desc = h('input', { type: 'text', id: 'pubDesc', maxlength: 300, placeholder: '예: 바다도 보고 맛있는 것도 먹어요' });
+    const stops = [...trip.waypoints, trip.destination];
+    const boxes = stops.map((p, i) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: String(i), checked: true }), p.name));
     body.append(
-      h('p', { class: 'note', text: [...trip.waypoints, trip.destination].map(p => p.name).join(' → ') }),
-      h('p', { class: 'sub', text: '장소 순서와 소개만 공개돼요. 가족 사진과 이름은 공개되지 않아요.', style: 'margin-top:10px' }),
+      h('p', { class: 'note warm', text: '누구나 볼 수 있게 공개돼요. 고른 장소의 이름·주소·지도 위치와 가족 여행 취향이 함께 나가요. 집이나 숙소처럼 알리고 싶지 않은 곳은 체크를 풀어 주세요.' }),
+      h('p', { class: 'sub', text: '가족 사진과 가족 이름은 공개되지 않아요. 공개한 뒤에는 여행 코스 화면에서 내릴 수 있어요.', style: 'margin-top:10px' }),
+      h('label', { text: '공개할 장소' }), ...boxes,
       h('label', { for: 'pubTitle', text: '여행 이름' }), title, h('label', { for: 'pubDesc', text: '한 줄 소개 (선택)' }), desc,
       btn('이 코스 공개하기', async () => {
         if (!title.value.trim()) { title.focus(); throw Error('여행 이름을 적어 주세요.'); }
-        await roomApi('/api/courses', 'POST', { title: title.value, description: desc.value, source: done ? 'completed' : 'current' });
-        closeSheet(); toast('코스를 공개했어요.'); coursesLoaded = false;
+        const exclude = boxes.map((l, i) => l.firstChild.checked ? -1 : i).filter(i => i >= 0);
+        if (exclude.length === stops.length) throw Error('공개할 장소를 한 곳 이상 남겨 주세요.');
+        await roomApi('/api/courses', 'POST', { title: title.value, description: desc.value, source: done ? 'completed' : 'current', exclude });
+        closeSheet(); toast('코스를 공개했어요. 여행 코스에서 볼 수 있어요.'); coursesLoaded = false;
       }, 'full'));
   });
 }
 $('shareCourseBtn2').onclick = openPublish;
 $('saveMemoryBtn').replaceWith(Object.assign(btn('추억 저장', async () => {
-  if (!signedIn()) { needLogin('추억은 내 계정에 저장돼요.'); return; }
+  if (!signedIn()) { tab.set('family-after-login', 'memory'); needLogin('추억은 내 계정에 저장돼요.'); return; }
   await profileApi('/api/profile/memories', 'POST', {}, { 'X-Room-Token': room.token });
   profile.memories = null; toast('내 추억에 저장했어요. 내 장소에서 볼 수 있어요.');
+  $('saveMemoryBtn').lastChild.textContent = '추억 저장됨';
 }), { id: 'saveMemoryBtn' }));
 function needLogin(reason) {
-  openSheet('로그인이 필요해요', body => body.append(h('p', { class: 'sub', text: reason + ' 로그인하면 다른 기기에서도 볼 수 있어요.' }), config.enabled ? btn('로그인 또는 회원가입', login, 'full', 'user') : h('p', { class: 'note warm', text: '지금은 계정 기능을 준비 중이에요.' })));
+  openSheet('로그인이 필요해요', body => body.append(h('p', { class: 'sub', text: reason + ' 로그인하면 다른 기기에서도 볼 수 있어요.' }), config.enabled ? btn('로그인 또는 회원가입', login, 'full', 'user') : h('p', { class: 'note warm', text: '지금은 계정 기능을 준비 중이에요.' }),
+    config.enabled ? h('p', { class: 'note', text: '로그인 화면은 영어로 나와요. 처음이면 Sign up, 가입했다면 Sign in을 눌러 주세요.' }) : null));
 }
 
 // ───────── 장소 고르기: 제안·저장 ─────────
@@ -829,7 +884,7 @@ $('placeForm').onsubmit = async e => {
 // ───────── 찾기: 여행 코스 ─────────
 let coursesLoaded = false, courseRun = 0;
 // 보는 순서: 요즘 인기 / 좋아요순 / 새로 올라온 / 지역 추천(관광 안내 자료를 참고한 코스)
-const COURSE_VIEWS = [['trending', '요즘 인기', 'sort=trending'], ['popular', '좋아요순', 'sort=popular&kind=community'], ['new', '새로 올라온', 'sort=new&kind=community'], ['official', '지역 추천', 'kind=official&sort=trending']];
+const COURSE_VIEWS = [['trending', '요즘 인기', 'sort=trending'], ['popular', '좋아요순', 'sort=popular&kind=community'], ['new', '새로 올라온', 'sort=new&kind=community'], ['official', '참고 코스', 'kind=official&sort=trending']];
 let courseView = 'trending';
 function drawCourseSorts() {
   $('courseSorts').replaceChildren(...COURSE_VIEWS.map(([key, label]) => {
@@ -863,11 +918,12 @@ async function loadCourses(q) {
   box.replaceChildren(h('p', { class: 'empty', text: '여행을 찾고 있어요…' }));
   try {
     if (signedIn() && !profile.likesLoaded) { try { profile.likes = new Set((await profileApi('/api/profile/likes')).ids); profile.likesLoaded = true; } catch {} }
-    const r = await send('/api/public/courses?q=' + encodeURIComponent(q) + '&' + COURSE_VIEWS.find(v => v[0] === courseView)[2]);
+    const r = await send('/api/public/courses?q=' + encodeURIComponent(q) + '&' + COURSE_VIEWS.find(v => v[0] === courseView)[2], { token: room.token || undefined });
     if (run !== courseRun) return;
     if (!r.ok) throw Error(r.body.error || '여행을 불러오지 못했어요.');
     box.replaceChildren();
     if (!r.body.courses.length) box.append(h('section', { class: 'card' }, emptyBox('book', '아직 이 지역에 공유된 코스가 없어요.')));
+    else if (courseView === 'trending' && !r.body.courses.some(c => c.trendScore > 0)) box.append(h('p', { class: 'sub', style: 'margin:0 4px 12px', text: '아직 활동이 적어서 좋아요가 많은 순서로 보여 드려요.' }));
     for (const c of r.body.courses) box.append(courseCard(c));
   } catch (e) { if (run === courseRun) { coursesLoaded = false; box.replaceChildren(h('section', { class: 'card' }, emptyBox('book', e.message))); } }
 }
@@ -876,8 +932,8 @@ function courseCard(c) {
   stops.forEach((p, i) => list.append(h('li', {}, h('span', { class: 'num' + (i === stops.length - 1 ? ' dest' : '') }, i === stops.length - 1 ? icon('flag') : String(i + 1)), h('div', {}, h('strong', { text: p.name })))));
   const card = h('section', { class: 'card' },
     h('div', { class: 'chips', style: 'margin-top:0' },
-      h('span', { class: 'tag' + (c.sample && !c.official ? ' warm' : ''), text: c.official ? (c.region ? c.region + ' · ' : '') + '관광 안내 참고' : c.sample ? '시연 예시' : '가족이 공유한 코스' }),
-      c.trendScore > 0 ? h('span', { class: 'tag ok', text: '요즘 인기' }) : null),
+      h('span', { class: 'tag' + (c.sample && !c.official ? ' warm' : ''), text: c.official ? (c.region ? c.region + ' · ' : '') + (c.sourceKind === 'video' ? '여행 영상 참고' : '관광 안내 참고') : c.sample ? '시연 예시' : c.mine ? '우리 가족이 올린 코스' : '가족이 공유한 코스' }),
+      c.trending ? h('span', { class: 'tag ok', text: '요즘 인기' }) : null),
     h('h3', { text: c.title, style: 'margin-top:8px' }), h('p', { class: 'sub', text: c.description || '가족과 함께 둘러보는 여행이에요.' }),
     c.official && c.sourceName ? h('p', { class: 'sub', text: '참고: ' + c.sourceName }) : null, list);
   const canReview = !(c.sample && !c.official);
@@ -905,12 +961,29 @@ function courseCard(c) {
   }
   if (reviewBtn) actions.append(reviewBtn);
   card.append(actions);
+  if (c.mine) card.append(btn('이 코스 공유 그만하기', async () => {
+    if (!await confirmSheet('공유 그만하기', '“' + c.title + '” 코스를 목록에서 내릴까요? 받은 좋아요와 후기도 함께 사라져요.', '내리기', true)) return;
+    await roomApi('/api/courses/' + encodeURIComponent(c.id), 'DELETE');
+    toast('코스를 내렸어요.'); loadCourses($('courseQuery').value.trim());
+  }, 'line full'));
+  else if (!c.sample) {
+    const report = h('button', { class: 'linkrow', type: 'button', style: 'border-top:0;min-height:48px;font-size:16px;color:var(--sub)' }, h('span', { text: '부적절한 코스 신고하기' }));
+    report.onclick = async () => {
+      if (!signedIn()) { needLogin('신고는 로그인한 뒤 할 수 있어요.'); return; }
+      if (!await confirmSheet('코스 신고', '“' + c.title + '” 코스를 신고할까요? 서로 다른 세 사람이 신고하면 목록에서 숨겨져요.', '신고하기', true)) return;
+      try { const r = await profileApi('/api/courses/' + encodeURIComponent(c.id) + '/report', 'POST', {}); toast(r.hidden ? '신고가 모여 이 코스를 숨겼어요.' : '신고를 접수했어요.'); if (r.hidden) loadCourses($('courseQuery').value.trim()); }
+      catch (e) { toast(e.message, true); }
+    };
+    card.append(report);
+  }
   return card;
 }
 // 후기: 읽기는 누구나, 쓰기는 로그인한 사람만. 계정당 코스별 하나이고 다시 쓰면 고쳐진다.
 async function openReviews(course, onChange) {
   const path = '/api/courses/' + encodeURIComponent(course.id) + '/reviews';
-  const first = signedIn() ? await profileApi(path) : (await send(path)).body;
+  let first;
+  if (signedIn()) first = await profileApi(path);
+  else { const r = await send(path); if (!r.ok || !Array.isArray(r.body.reviews)) throw Error('후기를 불러오지 못했어요. 잠시 후 다시 눌러 주세요.'); first = r.body; }
   const draw = data => openSheet(course.title, body => {
     onChange(data.count, data.rating);
     body.append(h('p', { class: 'sub', text: data.count ? '★ ' + data.rating.toFixed(1) + ' · 후기 ' + data.count + '개' : '아직 후기가 없어요. 다녀오셨다면 첫 후기를 남겨 보세요.' }));
@@ -1015,7 +1088,8 @@ function openGroupPropose(folder, places) {
   if (!room.token) { openPropose(places[0]); return; }
   openSheet('코스로 제안하기', body => {
     const boxes = places.map((p, i) => h('label', { class: 'check' }, h('input', { type: 'checkbox', value: String(i), checked: i < 5 }), p.name));
-    body.append(h('p', { class: 'sub', text: '최대 5곳까지 고를 수 있어요. 목적지는 그대로 두고 들르는 곳으로 더해요.' }), ...boxes, btn('고른 장소 제안하기', async () => {
+    body.append(h('p', { class: 'sub', text: '최대 5곳까지 고를 수 있어요. 목적지는 그대로 두고 들르는 곳으로 더해요.' }),
+      state?.itinerary ? null : h('p', { class: 'note warm', text: '아직 목적지가 없어요. 운전자가 목적지를 정한 뒤에 이 장소들을 길에 담을 수 있어요.' }), ...boxes, btn('고른 장소 제안하기', async () => {
       const picked = boxes.map(l => l.firstChild).filter(c => c.checked).map(c => places[Number(c.value)]);
       if (!picked.length || picked.length > 5) throw Error('1곳에서 5곳까지 골라 주세요.');
       await roomApi('/api/proposals/saved-group', 'POST', { title: folder || '저장한 장소', places: picked });
@@ -1089,7 +1163,11 @@ function roomRow(entry) {
   const actions = h('div', { class: 'row' });
   if (!current) actions.append(btn('이 방 열기', async () => {
     const r = await send('/api/state', { token: entry.token });
-    if (!r.ok) throw Error('이 방은 만료됐어요. 가족에게 초대 링크를 다시 받아 주세요.');
+    if (!r.ok && r.body.error === '가족방에 다시 참여해 주세요') {
+      history_ = history_.filter(x => x.id !== entry.id); await saveHistory().catch(() => {}); renderAll();
+      throw Error('이 가족방은 닫혀서 목록에서 지웠어요.');
+    }
+    if (!r.ok) throw Error('지금은 열 수 없어요. 잠시 후 다시 눌러 주세요.');
     pendingInvite = ''; history.replaceState(null, '', location.pathname);
     enterRoom(entry.token, entry.invite); showTab('home');
   }));
@@ -1115,14 +1193,14 @@ function renderRooms() {
 }
 
 // ───────── 시작 ─────────
-let wantsNewTrip = false;
+let wantsNewTrip = false, cameBackForMemory = false;
 let pendingInvite = new URLSearchParams(location.hash.slice(1)).get('invite') || '';
 createForm($('createFormHome'), 'home'); createForm($('createFormRooms'), 'rooms');
 $('joinBtn').replaceWith(Object.assign(btn('가족방 참여하기', async () => {
   const name = $('joinName').value.trim();
   if (!name) { $('joinName').focus(); throw Error('이름을 적어 주세요.'); }
   const r = await send('/api/join', { method: 'POST', data: { invite: pendingInvite, name } });
-  if (!r.ok) throw Error(r.body.error || '참여하지 못했어요. 초대 링크를 다시 확인해 주세요.');
+  if (!r.ok) throw Error(r.status === 400 && /초대 링크/.test(r.body.error || '') ? '이 초대 링크는 닫혔어요. 가족에게 새 링크를 부탁해 주세요.' : r.body.error || '참여하지 못했어요. 잠시 후 다시 눌러 주세요.');
   const invite = pendingInvite; pendingInvite = ''; history.replaceState(null, '', location.pathname);
   enterRoom(r.body.memberToken, invite); toast('가족방에 참여했어요.');
 }, 'full'), { id: 'joinBtn' }));
@@ -1135,13 +1213,24 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && ro
   const cameFromLogin = new URLSearchParams(location.search).has('code');
   await finishLogin();
   await loadHistory();
-  if (!pendingInvite) {
+  if (pendingInvite) {
+    const known = history_.find(x => x.invite === pendingInvite);
+    if (known) {
+      try { const r = await send('/api/state', { token: known.token }); if (r.ok) { pendingInvite = ''; history.replaceState(null, '', location.pathname); enterRoom(known.token, known.invite); } } catch {}
+    }
+  }
+  if (!pendingInvite && !room.token) {
     const wanted = local.get(CURRENT), entry = history_.find(x => x.id === wanted), token = tab.get('family-route-member') || entry?.token;
     if (token) enterRoom(token, tab.get('family-route-invite') || entry?.invite || '');
   }
+  // 로그인하러 갔다 돌아왔으면 하려던 '추억 저장'을 이어서 한다.
+  if (tab.get('family-after-login') === 'memory') {
+    tab.del('family-after-login');
+    if (signedIn() && room.token) { cameBackForMemory = true; setTimeout(() => $('saveMemoryBtn').click(), 1500); }
+  }
   renderAll();
   if (location.pathname === '/courses') { showTab('find'); showFind('courses'); }
-  else if (location.pathname === '/account' || cameFromLogin) showTab('mine');
+  else if ((location.pathname === '/account' || cameFromLogin) && !cameBackForMemory) showTab('mine');
   if (location.pathname !== '/' && !location.hash) history.replaceState(null, '', '/');
 })();
 </script>
