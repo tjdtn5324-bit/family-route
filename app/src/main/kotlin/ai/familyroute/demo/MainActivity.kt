@@ -35,6 +35,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import ai.familyroute.demo.car.*
 import ai.familyroute.demo.phone.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
@@ -96,14 +97,18 @@ class MainActivity : ComponentActivity() {
             var switchingRoom by remember { mutableStateOf(false) }
             var editWaypoints by remember { mutableStateOf<List<LiveWaypoint>>(emptyList()) }
             var editVersion by remember { mutableIntStateOf(-1) }
-            var photoImages by remember { mutableStateOf<List<Pair<String, ImageBitmap>>>(emptyList()) }
+            var photoImages by remember { mutableStateOf<List<Pair<FamilyPhoto, ImageBitmap>>>(emptyList()) }
+            var photoRoom by remember { mutableStateOf<LiveRoom?>(null) }
+            var albumPhotos by remember { mutableStateOf<List<FamilyPhoto>>(emptyList()) }
+            var deletePhotoTarget by remember { mutableStateOf<FamilyPhoto?>(null) }
+            var photoDeleting by remember { mutableStateOf(false) }
             var photoStatus by remember { mutableStateOf("") }
 
             fun applyState(s: LiveRoomState) {
                 proposals = s.proposals; route = s.route; waypoints = s.waypoints; itineraryVersion = s.itineraryVersion; familyPhotos = s.photos
                 if (s.roomName.isNotBlank()) roomName = s.roomName
             }
-            fun open(next: Screen) { screen = next; error = ""; switchingRoom = false }
+            fun open(next: Screen) { screen = next; error = ""; switchingRoom = false; photoRoom = null; photoImages = emptyList(); albumPhotos = emptyList(); deletePhotoTarget = null; photoStatus = "" }
             /** 한 번에 하나씩만 실행하고, 실패하면 이유를 화면에 보여 준다. */
             fun run(failure: String, block: suspend () -> Unit) {
                 if (busy) return
@@ -181,7 +186,7 @@ class MainActivity : ComponentActivity() {
                 if (choice == "SKIP") notice = "안내를 종료했어요."
             }
 
-            LaunchedEffect(parked) { if (!parked) { screen = Screen.MAP; finishDialog = false; memoryDialog = false } }
+            LaunchedEffect(parked) { if (!parked) { screen = Screen.MAP; finishDialog = false; memoryDialog = false; photoRoom = null; photoImages = emptyList(); deletePhotoTarget = null } }
             LaunchedEffect(room) {
                 val active = room ?: return@LaunchedEffect
                 val seen = mutableSetOf<String>()
@@ -204,14 +209,31 @@ class MainActivity : ComponentActivity() {
                     delay(2000)
                 }
             }
-            LaunchedEffect(screen, room, familyPhotos) {
-                val active = room
-                if (screen == Screen.PHOTOS && active != null) {
-                    photoStatus = if (familyPhotos.isEmpty()) "" else "사진을 불러오는 중이에요."
+            LaunchedEffect(screen, photoRoom) {
+                val active = photoRoom ?: return@LaunchedEffect
+                if (screen != Screen.PHOTOS) return@LaunchedEffect
+                var loaded: List<FamilyPhoto>? = null
+                photoStatus = "사진을 불러오는 중이에요."
+                while (true) {
                     try {
-                        photoImages = familyPhotos.map { p -> val bytes = client.photo(active, p.id); val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: throw IllegalStateException(); p.memberName to bitmap.asImageBitmap() }
+                        val current = client.state(active).photos
+                        if (current != loaded) {
+                            albumPhotos = current
+                            photoImages = photoImages.filter { pair -> current.any { it.id == pair.first.id } }
+                            val images = current.map { p ->
+                                val cached = photoImages.firstOrNull { it.first.id == p.id }
+                                cached ?: kotlin.run {
+                                    val bytes = client.photo(active, p.id)
+                                    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: throw IllegalStateException()
+                                    p to bitmap.asImageBitmap()
+                                }
+                            }
+                            photoImages = images; loaded = current
+                        }
                         photoStatus = ""
-                    } catch (_: Exception) { photoStatus = "사진을 불러오지 못했어요. 연결을 확인해 주세요." }
+                    } catch (cancelled: CancellationException) { throw cancelled }
+                    catch (_: Exception) { loaded = null; photoImages = emptyList(); photoStatus = "사진을 불러오지 못했어요. 가족방 연결을 확인해 주세요." }
+                    delay(2000)
                 }
             }
             // 주행 중에는 새 제안을 잠깐만 보여 주고, 정차 중에는 운전자가 고를 때까지 둔다.
@@ -229,12 +251,12 @@ class MainActivity : ComponentActivity() {
                 Row(Modifier.fillMaxSize()) {
                     // 왼쪽 세로 메뉴: 어느 화면에서나 같은 자리에 있다.
                     Column(Modifier.fillMaxHeight().width(124.dp).background(CarColors.Navy).padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Image(painterResource(R.drawable.ic_app), contentDescription = "가족경로", modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
+                        Image(painterResource(R.drawable.ic_app_brand), contentDescription = "아빠어디가", modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
                         Spacer(Modifier.height(6.dp))
                         NavItem(R.drawable.ic_nav_map, "지도", screen == Screen.MAP || screen == Screen.ORDER) { open(Screen.MAP) }
                         NavItem(R.drawable.ic_nav_search, "찾기", screen == Screen.FIND, enabled = parked) { openFind(false) }
                         NavItem(R.drawable.ic_nav_family, "가족", screen == Screen.FAMILY, enabled = parked, badge = proposals.size) { open(Screen.FAMILY) }
-                        NavItem(R.drawable.ic_nav_photo, "사진", screen == Screen.PHOTOS, enabled = parked && room != null, badge = 0) { open(Screen.PHOTOS) }
+                        NavItem(R.drawable.ic_nav_photo, "사진", screen == Screen.PHOTOS, enabled = parked, badge = 0) { open(Screen.PHOTOS) }
                     }
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         when (screen) {
@@ -341,7 +363,7 @@ class MainActivity : ComponentActivity() {
                                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                                         Card(Modifier.weight(1f)) {
                                             T("차에서 새로 시작", 23, FontWeight.Bold)
-                                            T("가족방을 만들고 QR로 가족을 초대해요.", 18, color = CarColors.Sub)
+                                            T("가족방을 만들고 QR 또는 초대 링크로 함께해요.", 18, color = CarColors.Sub)
                                             CarButton(if (busy) "만드는 중" else "가족방 만들기", Modifier.fillMaxWidth(), enabled = !busy, icon = R.drawable.ic_plus) { run("가족방을 만들지 못했어요. 연결을 확인해 주세요.") { room = client.create() } }
                                         }
                                         Card(Modifier.weight(1f)) {
@@ -356,7 +378,7 @@ class MainActivity : ComponentActivity() {
                                         Card(Modifier.width(250.dp)) {
                                             val invite = client.inviteUrl(active)
                                             T("가족 초대", 22, FontWeight.Bold)
-                                            if (invite != null) { InviteQr(invite, 200); T("휴대폰 카메라로 찍으면 바로 참여해요.", 17, color = CarColors.Sub) }
+                                            if (invite != null) { InviteQr(invite, 200); T("QR 또는 아래 초대 주소로 참여해요.", 17, color = CarColors.Sub); T(invite, 17, color = CarColors.Ink); T("휴대폰 가족방에서 링크를 복사해 카톡으로 공유할 수 있어요.", 17, color = CarColors.Sub) }
                                             else T("지금은 이 PC 안에서만 연결돼 있어 QR을 만들 수 없어요.", 17, color = CarColors.Sub)
                                         }
                                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -402,24 +424,44 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
-                            Screen.PHOTOS -> SidePanel("우리 가족 사진", error, { open(Screen.MAP) }, Modifier.fillMaxWidth(.66f)) {
-                                T("이 가족방 사람만 볼 수 있어요. 사진은 휴대폰에서 올려요.", 19, color = CarColors.Sub)
-                                if (photoStatus.isNotBlank()) T(photoStatus, 20, color = CarColors.Sub)
-                                if (familyPhotos.isEmpty()) Card {
-                                    T("아직 올라온 사진이 없어요", 23, FontWeight.Bold)
-                                    val invite = room?.let { client.inviteUrl(it) }
-                                    if (invite != null) Row(horizontalArrangement = Arrangement.spacedBy(18.dp), verticalAlignment = Alignment.CenterVertically) { InviteQr(invite, 170); T("휴대폰으로 QR을 찍고 ‘우리 가족 사진’에서 사진을 올려 보세요.", 19, color = CarColors.Sub, modifier = Modifier.weight(1f)) }
-                                    else T("휴대폰 가족방의 ‘우리 가족 사진’에서 올릴 수 있어요.", 19, color = CarColors.Sub)
-                                }
-                                photoImages.chunked(3).forEach { rowItems ->
-                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                        rowItems.forEach { (name, bitmap) ->
-                                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                Image(bitmap, contentDescription = "${name}님이 올린 가족 사진", contentScale = ContentScale.Crop, modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(16.dp)))
-                                                T("${name}님", 17, FontWeight.Bold, CarColors.Sub, maxLines = 1)
+                            Screen.PHOTOS -> SidePanel(if (photoRoom == null) "사진을 볼 가족방 선택" else "${photoRoom?.name?.ifBlank { "가족 여행" }} · 사진", error, { open(Screen.MAP) }, Modifier.fillMaxWidth(.76f)) {
+                                val album = photoRoom
+                                if (album == null) {
+                                    T("어느 가족의 추억을 볼까요? 사진을 열어도 현재 여행 경로는 바뀌지 않아요.", 20, color = CarColors.Sub)
+                                    val albums = (listOfNotNull(room?.copy(name = roomName.ifBlank { room?.name ?: "" })) + roomHistory).distinctBy { it.driverToken }
+                                    if (albums.isEmpty()) {
+                                        T("아직 연결한 가족방이 없어요.", 23, FontWeight.Bold)
+                                        CarButton("가족방 연결하기", Modifier.fillMaxWidth()) { open(Screen.FAMILY) }
+                                    }
+                                    albums.forEachIndexed { index, saved ->
+                                        Card {
+                                            T(saved.name.ifBlank { "가족 여행 ${index + 1}" }, 24, FontWeight.Bold)
+                                            if (saved.driverToken == room?.driverToken) Tag("현재 여행 중인 가족방")
+                                            CarButton("이 가족방 사진 보기", Modifier.fillMaxWidth(), enabled = !photoDeleting) {
+                                                photoImages = emptyList(); albumPhotos = emptyList(); photoStatus = "사진을 불러오는 중이에요."; error = ""; photoRoom = saved
                                             }
                                         }
-                                        repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                                    }
+                                } else {
+                                    CarButton("다른 가족방 사진 보기", Modifier.fillMaxWidth(), Btn.Line, enabled = !photoDeleting) { open(Screen.PHOTOS) }
+                                    T("이 가족방의 사진만 보여요. 삭제하면 가족 모두의 앨범에서 사라져요.", 19, color = CarColors.Sub)
+                                    if (photoStatus.isNotBlank()) T(photoStatus, 20, color = CarColors.Sub)
+                                    if (albumPhotos.isEmpty() && photoStatus.isBlank()) Card {
+                                        T("아직 올라온 사진이 없어요", 23, FontWeight.Bold)
+                                        val invite = client.inviteUrl(album)
+                                        if (invite != null) { InviteQr(invite, 170); T("휴대폰 가족방에서 사진을 올려 주세요.", 19, color = CarColors.Sub) }
+                                    }
+                                    photoImages.chunked(3).forEach { rowItems ->
+                                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                            rowItems.forEach { (photo, bitmap) ->
+                                                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    Image(bitmap, contentDescription = "${photo.memberName}님이 올린 가족 사진", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth().aspectRatio(1.2f).clip(RoundedCornerShape(16.dp)))
+                                                    T("${photo.memberName}님", 18, FontWeight.Bold, CarColors.Sub, maxLines = 1)
+                                                    CarButton("사진 삭제", Modifier.fillMaxWidth(), Btn.Danger, enabled = !photoDeleting && parked) { deletePhotoTarget = photo }
+                                                }
+                                            }
+                                            repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                                        }
                                     }
                                 }
                             }
@@ -448,6 +490,31 @@ class MainActivity : ComponentActivity() {
                         }
                         val message = notice.ifBlank { if (screen == Screen.MAP) error else "" }
                         if (message.isNotBlank()) T(message, 21, FontWeight.Bold, Color.White, Modifier.align(Alignment.BottomCenter).padding(bottom = 22.dp).widthIn(max = 720.dp).clip(RoundedCornerShape(16.dp)).background(if (notice.isBlank()) CarColors.Bad else Color(0xFF10273F)).clickable { notice = ""; if (error != LOST) error = "" }.padding(horizontal = 22.dp, vertical = 16.dp))
+                    }
+                }
+                if (deletePhotoTarget != null && photoRoom != null && screen == Screen.PHOTOS && parked) CenterDialog {
+                    val target = deletePhotoTarget!!
+                    val album = photoRoom!!
+                    T("이 사진을 삭제할까요?", 28, FontWeight.Bold)
+                    T("${target.memberName}님이 올린 사진이 이 가족방의 모든 기기에서 삭제돼요. 되돌릴 수 없어요.", 20, color = CarColors.Sub)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CarButton("취소", Modifier.weight(1f), Btn.Soft, enabled = !photoDeleting) { deletePhotoTarget = null }
+                        CarButton(if (photoDeleting) "삭제 중" else "사진 삭제", Modifier.weight(1f), Btn.Danger, enabled = !photoDeleting) {
+                            if (parking.allowed.value) {
+                                photoDeleting = true
+                                scope.launch {
+                                    try {
+                                        client.deletePhoto(album, target.id)
+                                        if (photoRoom == album) {
+                                            photoImages = photoImages.filterNot { it.first.id == target.id }
+                                            albumPhotos = albumPhotos.filterNot { it.id == target.id }
+                                            deletePhotoTarget = null; notice = "사진을 삭제했어요."
+                                        }
+                                    } catch (_: Exception) { deletePhotoTarget = null; error = "사진을 삭제하지 못했어요. 연결을 확인한 뒤 다시 시도해 주세요." }
+                                    finally { photoDeleting = false }
+                                }
+                            }
+                        }
                     }
                 }
                 if (finishDialog && parked) CenterDialog {

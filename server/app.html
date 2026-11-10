@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
 <meta name="theme-color" content="#002c5f">
-<title>가족경로</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='11' fill='%23002c5f'/%3E%3Cpath d='M15 36V25a6 6 0 0 1 6-6h11m-5-6 6 6-6 6' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<title>아빠어디가</title>
+<link rel="icon" type="image/png" href="/assets/appa-eodiga.png">
+<link rel="apple-touch-icon" href="/assets/appa-eodiga.png">
 <style>
 :root{--navy:#002c5f;--navy2:#0b3f7a;--ink:#1c3550;--sub:#55687a;--line:#dde4ea;--bg:#f3f5f8;--card:#fff;--tint:#eaf1f7;--teal:#007fa3;--ok:#00664c;--okbg:#e4f5ee;--bad:#a32216;--badbg:#fdecea;--warm:#fff3dc;--warmink:#774900}
 *{box-sizing:border-box}
@@ -20,7 +21,7 @@ h3{font-size:20px;line-height:1.3}
 .appbar{position:sticky;top:0;z-index:6;background:var(--navy);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 18px 12px}
 .appbar-in{max-width:560px;margin:auto;display:flex;align-items:center;gap:12px}
 .logo{flex:none;width:40px;height:40px;border-radius:11px;background:#fff;display:grid;place-items:center}
-.logo svg{width:26px;height:26px;stroke:var(--navy)}
+.logo img{display:block;width:100%;height:100%;object-fit:contain}
 .appbar strong{display:block;font-size:20px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .appbar span.barsub{display:block;font-size:14px;opacity:.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .appbar-text{min-width:0;flex:1}
@@ -128,8 +129,8 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
 </head>
 <body>
 <header class="appbar"><div class="appbar-in">
-  <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 20v-7a4 4 0 0 1 4-4h8m-4-4 4 4-4 4"/></svg></span>
-  <div class="appbar-text"><strong id="barTitle">가족경로</strong><span class="barsub" id="barSub">가족이 함께 만드는 여행</span></div>
+  <span class="logo" aria-hidden="true"><img src="/assets/appa-eodiga.png" alt="" width="40" height="40"></span>
+  <div class="appbar-text"><strong id="barTitle">아빠어디가</strong><span class="barsub" id="barSub">가족이 함께 만드는 여행</span></div>
   <span class="dot" id="barDot" hidden></span>
 </div></header>
 
@@ -145,7 +146,7 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
         <button class="btn full" id="joinBtn" type="button">가족방 참여하기</button>
         <button class="btn soft full" id="createInstead" type="button">새 가족방을 만들래요</button>
       </section>
-      <section class="card" id="createCard"><h2>새 가족방 만들기</h2><p class="sub">로그인 없이 바로 시작할 수 있어요.</p><div id="createFormHome"></div></section>
+      <section class="card"><h2>가족과 여행을 준비해요</h2><p class="sub">차에 타기 전에도 시작할 수 있어요.</p><button class="btn full" id="openMyRooms">우리 가족방 들어가기</button><button class="btn soft full" id="openNewTrip">새 여행 만들기</button><button class="btn soft full" id="openCodeJoin">초대 코드로 참여하기</button><button class="btn line full" id="openAccessHelp">접속 주소 · 홈 화면에 추가</button></section><section class="card" id="createCard"><h2>새 가족방 만들기</h2><p class="sub">로그인 없이 바로 시작할 수 있어요.</p><div id="createFormHome"></div></section>
       <section class="card" id="recentCard" hidden><h2>최근 가족방</h2><div id="recentList"></div></section>
     </div>
 
@@ -209,7 +210,7 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
   </div>
 </main>
 
-<nav class="tabbar" aria-label="가족경로 메뉴"><div class="tabbar-in">
+<nav class="tabbar" aria-label="아빠어디가 메뉴"><div class="tabbar-in">
   <button type="button" data-tab="home" aria-current="page"></button>
   <button type="button" data-tab="find"></button>
   <button type="button" data-tab="mine"></button>
@@ -499,7 +500,7 @@ function changed(key, value) { const s = JSON.stringify(value); if (sig[key] ===
 function renderAll() { renderBar(); renderHome(); renderRooms(); if (currentTab === 'mine') renderMine(); }
 function renderBar() {
   const inRoom = !!state;
-  $('barTitle').textContent = inRoom ? state.room.name : '가족경로';
+  $('barTitle').textContent = inRoom ? state.room.name : '아빠어디가';
   $('barSub').textContent = inRoom ? (online ? '가족 ' + state.members.length + '명이 함께해요' : '다시 연결하는 중이에요') : '가족이 함께 만드는 여행';
   $('barDot').hidden = !inRoom;
   $('barDot').className = 'dot ' + (online ? 'on' : 'off');
@@ -518,7 +519,7 @@ function renderHome() {
   $('homeRoom').hidden = !inRoom;
   $('connecting').hidden = inRoom || !$('onboard').hidden;
   if (!inRoom) {
-    $('joinCard').hidden = !pendingInvite; $('createCard').hidden = !!pendingInvite;
+    $('joinCard').hidden = !pendingInvite; $('createCard').hidden = !!pendingInvite || !wantsNewTrip;
     $('recentCard').hidden = !history_.length;
     if (changed('recent', history_.map(x => [x.id, x.name]))) { $('recentList').replaceChildren(...history_.map(roomRow)); }
     return;
@@ -636,9 +637,9 @@ function openViewer(photo, s) {
   $('viewerImg').removeAttribute('src'); $('viewerImg').alt = photo.memberName + '님이 올린 사진';
   photoUrl(photo.id).then(url => { $('viewerImg').src = url; }).catch(() => {});
   $('viewerWho').textContent = photo.memberName + '님 · ' + new Date(photo.createdAt).toLocaleDateString('ko-KR');
-  const del = $('viewerDelete'); del.hidden = photo.memberId !== s.me.id; del.textContent = '삭제'; let armed = false;
+  const del = $('viewerDelete'); del.hidden = photo.memberId !== s.me.id; del.textContent = '내 사진 삭제'; let armed = false;
   del.onclick = async () => {
-    if (!armed) { armed = true; del.textContent = '정말 삭제'; return; }
+    if (!armed) { armed = true; del.textContent = '가족 앨범에서도 삭제할까요?'; return; }
     try { await roomApi('/api/photos/' + encodeURIComponent(photo.id), 'DELETE'); photoCache.delete(photo.id); $('viewer').close(); await refreshNow(); toast('사진을 삭제했어요.'); } catch (e) { toast(e.message, true); }
   };
   $('viewer').showModal();
@@ -646,13 +647,38 @@ function openViewer(photo, s) {
 $('viewerClose').onclick = () => $('viewer').close();
 
 // ───────── 초대·차량 연결·취향·공유 ─────────
-async function shareInvite() {
-  if (!room.invite) throw Error('초대 링크를 찾지 못했어요.');
-  const url = location.origin + '/#invite=' + encodeURIComponent(room.invite);
-  if (navigator.share) { try { await navigator.share({ title: '가족경로 초대', text: (state?.room.name || '가족 여행') + '에 함께해요', url }); } catch (e) { if (e.name !== 'AbortError') throw e; } return; }
-  try { await navigator.clipboard.writeText(url); toast('초대 링크를 복사했어요. 가족 대화방에 붙여 넣어 주세요.'); }
-  catch { openSheet('초대 링크', body => body.append(h('p', { class: 'sub', text: '아래 주소를 길게 눌러 복사해 가족에게 보내 주세요.' }), h('p', { class: 'note', text: url, style: 'overflow-wrap:anywhere;user-select:all' }))); }
+async function copyAddress(url) {
+  try { await navigator.clipboard.writeText(url); toast('링크를 복사했어요. 카톡이나 문자에 붙여 넣어 주세요.'); }
+  catch { toast('표시된 주소를 길게 눌러 복사해 주세요.'); }
 }
+function accessHelp() {
+  openSheet('다음에도 쉽게 찾아오세요', body => body.append(
+    h('p',{class:'note',text:location.origin+'/',style:'overflow-wrap:anywhere;user-select:all'}),
+    btn('홈페이지 주소 복사',()=>copyAddress(location.origin+'/'),'full'),
+    h('p',{class:'sub',text:'휴대폰 브라우저 메뉴에서 ‘홈 화면에 추가’를 찾아보세요. 지원 여부와 메뉴 이름은 브라우저마다 달라요. 가족방 기록은 참여한 브라우저에 남아요.'}),
+    h('p',{class:'sub',text:/^(localhost|127\.0\.0\.1|10\.0\.2\.2)$/.test(location.hostname)?'이 주소는 PC 내부용이에요. 휴대폰 공유에는 외부 접속 주소가 필요해요.':'시연 주소가 바뀌면 새 주소를 받아야 해요.'})));
+}
+async function shareInvite() {
+  if(!room.invite) throw Error('초대 링크를 찾지 못했어요.');
+  const url=location.origin+'/#invite='+encodeURIComponent(room.invite);
+  openSheet('가족 초대하기',body=>{
+    const info=h('p',{class:'note',text:'QR 없이 링크 또는 초대 코드로 참여할 수 있어요.'});
+    body.append(h('p',{class:'note',text:url,style:'overflow-wrap:anywhere;user-select:all'}),
+      btn('초대 링크 복사',()=>copyAddress(url),'full'),
+      btn('카톡·문자로 공유하기',async()=>{if(!navigator.share)return copyAddress(url);try{await navigator.share({title:'아빠어디가 초대',url});}catch(e){if(e.name!=='AbortError')throw e;}},'soft full'),
+      btn('10분 초대 코드 보기',async()=>{const c=await roomApi('/api/rooms/invite-code','POST',{});info.textContent=c.code.slice(0,5)+' '+c.code.slice(5)+' · '+new Date(c.expiresAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+'까지. 홈페이지의 초대 코드로 참여하기에 입력해 주세요. 차량 연결 코드와 달라요.';},'soft full'),info,
+      h('p',{class:'sub',text:'가족에게만 공유해 주세요. 코드는 서버 재시작 시 만료돼요.'}),btn('홈페이지 주소 · 접속 안내',accessHelp,'line full'));
+  });
+}
+function joinByCode(){openSheet('초대 코드로 참여하기',body=>{
+  const name=h('input',{id:'codeName',placeholder:'예: 엄마, 민지',maxlength:'30'}),code=h('input',{id:'joinCode',placeholder:'10자리 초대 코드',maxlength:'15',autocomplete:'off'});
+  body.append(h('label',{for:'codeName',text:'어떻게 불러드릴까요?'}),name,h('label',{for:'joinCode',text:'가족 초대 코드 (차량 연결 코드와 달라요)'}),code,
+    btn('가족방 참여하기',async()=>{if(!name.value.trim()||!code.value.trim())throw Error('이름과 초대 코드를 입력해 주세요.');const r=await send('/api/join-code',{method:'POST',data:{name:name.value.trim(),code:code.value}});if(!r.ok)throw Error(r.body.error||'참여하지 못했어요.');closeSheet();enterRoom(r.body.memberToken,r.body.invite);showTab('home');toast('가족방에 참여했어요.');},'full'));
+});}
+$('openMyRooms').onclick=()=>showTab('rooms');
+$('openNewTrip').onclick=()=>{wantsNewTrip=true;renderHome();$('createCard').scrollIntoView({behavior:'smooth'});};
+$('openCodeJoin').onclick=joinByCode;
+$('openAccessHelp').onclick=accessHelp;
 async function pairCar() {
   const r = await roomApi('/api/rooms/pairing', 'POST', {});
   openSheet('차량에 연결하기', body => body.append(
@@ -1080,7 +1106,7 @@ function renderRooms() {
   card.hidden = !state;
   if (state && changed('roomsCurrent', [state.room, state.members])) {
     card.replaceChildren(h('span', { class: 'tag ok', text: '지금 열려 있는 방' }), h('h2', { text: state.room.name, style: 'margin-top:8px' }), h('p', { class: 'sub', text: '함께하는 가족: ' + state.members.map(m => m.name).join(', ') }),
-      btn('가족에게 초대 링크 보내기', shareInvite, 'full', 'share'), btn('차량 연결 코드 받기', pairCar, 'soft full', 'car'),
+      btn('가족에게 초대 링크 보내기', shareInvite, 'full', 'share'), btn('접속 주소 · 홈 화면에 추가', accessHelp, 'soft full'), btn('다른 가족방 초대 코드 입력', joinByCode, 'soft full'), btn('차량 연결 코드 받기', pairCar, 'soft full', 'car'),
       h('p', { class: 'note', text: '초대 링크를 받은 사람은 누구나 들어올 수 있어요. 가족에게만 보내 주세요.' }));
   }
   if (changed('roomsList', [history_.map(x => [x.id, x.name, x.archived]), state?.room.id])) {
@@ -1089,6 +1115,7 @@ function renderRooms() {
 }
 
 // ───────── 시작 ─────────
+let wantsNewTrip = false;
 let pendingInvite = new URLSearchParams(location.hash.slice(1)).get('invite') || '';
 createForm($('createFormHome'), 'home'); createForm($('createFormRooms'), 'rooms');
 $('joinBtn').replaceWith(Object.assign(btn('가족방 참여하기', async () => {
@@ -1100,7 +1127,7 @@ $('joinBtn').replaceWith(Object.assign(btn('가족방 참여하기', async () =>
   enterRoom(r.body.memberToken, invite); toast('가족방에 참여했어요.');
 }, 'full'), { id: 'joinBtn' }));
 $('joinName').addEventListener('keydown', e => { if (e.key === 'Enter') $('joinBtn').click(); });
-$('createInstead').onclick = () => { pendingInvite = ''; history.replaceState(null, '', location.pathname); renderHome(); };
+$('createInstead').onclick = () => { wantsNewTrip = true; pendingInvite = ''; history.replaceState(null, '', location.pathname); renderHome(); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden && room.token) refreshNow().catch(() => {}); });
 
 (async function start() {

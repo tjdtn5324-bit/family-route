@@ -1,100 +1,122 @@
-# family-route-demo
+# 아빠어디가
 
-Pleos Connect(Android Automotive) 헤드유닛용 가족 경로 데모 앱. 달리는 차 안에서 가족이 들를 곳을 제안하면 운전자가 주행 화면에서 정한다. 실제 차량 이동 대신 **더미 주행 시뮬레이터**가 서울 → 강릉(가상 경로 192km)을 달린다.
+**가족 각자의 가고 싶은 곳을 모아 차량에서 함께 여행 경로를 정하고, 가족방 사진으로 추억을 나누는 PLEOS 차량용 앱.**
 
-## 상태
+현대자동차그룹 차량용 앱 개발 공모전 구현 제출용 프로젝트입니다. 이전 이름은 가족경로이며, 최신 실행 앱은 `ai.familyroute.demo` / `MainActivity`입니다. Android Studio의 **Pleos Connect VM(Android Automotive)** 에서 실행합니다. 일반 휴대폰에는 APK 대신 웹 가족방을 사용합니다.
 
-| 단계 | 내용 | 상태 |
-|---|---|---|
-| Phase 1 | 골격, 테마, 폰트, 메인 화면 | 완료 |
-| Phase 2 | scenario.json, 시뮬레이터, 움직이는 지도, 회전 안내, ETA | 완료 |
-| Phase 3 | 제안 상태머신, SuggestOverlay, 대본 재생, 우회 경로 교체, DPAD | 완료 |
-| Phase 4 | DecideScreen, TimelineScreen, 개발자 패널 | 완료 |
-| 추가 | 가족 폰 실시간 소식(같은 Wi-Fi), 가까워지면 한 번 더 묻기, 현대차 딥 네이비 색 | 완료 |
-| Phase 5 | Pleos Vehicle SDK 연동 | 남음 (아래 "Pleos 연동 메모") |
+## 제출 APK
 
-## 구조
+- [release APK 다운로드](apk/familyroute_아빠어디가_release.apk)
+- 파일 경로: `apk/familyroute_아빠어디가_release.apk`
+- `familyroute`는 기존 제출 파일의 식별 접두사입니다. 정식 팀명/개인 성명은 접수양식 작성 시 확정해야 합니다.
+- release 변형으로 빌드한 실행 APK입니다. 현재 VM의 앱과 데이터를 유지하며 업데이트할 수 있도록 기존 개발 인증서로 서명합니다. 스토어 배포용 서명키가 아닙니다.
+- 기존 `가족경로` APK가 아닌 위 최신 APK를 사용해 주세요. 직접 `assembleRelease`로 빌드하면 unsigned APK가 생성되므로 본인 인증서로 별도 서명해야 설치할 수 있습니다.
 
-```
-assets/scenario.json  (tools/gen_scenario.py로 생성: 경로·장소·우회 폴리라인·대본)
-        │
-SimulatedVehicleSource ──► TripEngine ◄── FamilyEventSource
- (TripSimulator, 10Hz)       │ 유일한 상태 주인   ├ ScriptedFamilySource (대본, 주행 거리 기준)
-                             │                    ├ DevPanelFamilySource (개발자 패널)
-                             │                    └ PhoneFamilySource (가족 폰 POST)
-                             │ StateFlow → UiMapper → TripUiState
-                             ▼
- Compose: MainScreen / SuggestOverlay / DecideScreen / TimelineScreen / DevPanel
- PhoneLinkServer: 상태 변화 → 가족 폰 브라우저(SSE)
-```
+## 구현 기능과 사용 순서
 
-- `TripEngine`이 경로도 소유한다. 경유지가 확정되면 `ActiveRoute.build`로 우회 폴리라인을 끼운 새 경로를 만들고 시뮬레이터가 따라간다(차 위치는 같은 지점으로 다시 맞춤).
-- `MapRenderer` 인터페이스 뒤에 `CanvasMapRenderer`(오프라인 Canvas 지도). MapLibre 등으로 바꿀 때 이것만 새로 구현.
-- DI 프레임워크 없이 `TripViewModel`에서 수동 주입.
+| 기능 | 사용자 흐름 |
+|---|---|
+| 목적지와 경유지 | 차량의 목적지 찾기 → 장소 선택 → 가족 제안 확인 → 경유지 반영·순서 변경·삭제 |
+| 가족방 초대 | 차량 가족 메뉴 → QR/초대 링크 또는 휴대폰 홈페이지 → 방 생성·초대 코드 참여 |
+| 휴대폰에서 여행 준비 | 가족방 생성 → 장소 또는 저장 묶음 제안 → 차량 연결 코드로 연결 |
+| 추천 여행·커뮤니티 | 지역 검색 → 코스 상세 → 코스 시작 또는 기존 목적지의 경유지로 담기 |
+| 저장 장소·묶음 | 휴대폰 내 장소 → 장소 검색 → 묶음에 저장 → 개별 장소/묶음 제안 |
+| 후기·인기 코스 | 코스 둘러보기 → 후기·좋아요 → 앱 내부 활동 기반 추천 |
+| 여행 마무리 | 안내 종료 → 개인 추억 저장 또는 공개 코스 공유 |
+| 가족 사진 | 휴대폰 가족방에서 업로드 → 차량 사진 → 가족방 선택 → 해당 방 사진 보기 |
+| 사진 삭제 | 차량 사진의 삭제 버튼 → 확인. 휴대폰에서는 자신이 올린 사진 삭제 |
 
-## 시뮬레이터
+사진은 가족방 참가 권한으로 접근하며 공개 코스에 포함하지 않습니다. 삭제하면 해당 가족방의 모든 기기에서 사라집니다. 차량의 사진 열람·삭제 등 주요 조작은 주차 상태로 제한합니다. 다른 방 앨범을 보는 동안 현재 여행 경로는 바뀌지 않습니다.
 
-- 경로: 주요 지점을 곡선으로 잇고 시드 고정 굴곡을 넣어 200m 간격으로 나눈 가상 좌표(실제 길찾기 아님). 분기점 6곳(팔당, 서종IC, 중앙고속도로, 만종JC, 대관령IC, 경포해변)은 실제로 꺾이게 배치
-- 속도: 구간 제한속도(일반도로 60, 올림픽대로 80, 고속도로 100)까지 ±2.5m/s² 가감속, 큰 회전 앞 감속, 경유지 앞에서 멈춤 → 기어 P → 체류 → 재출발
-- 배속 기본 ×20(약 2시간 10분 주행이 6분 30초 안팎), 개발자 패널에서 ×1/×5/×20/×60, 일시정지, 세우기, 다음 경유지 직전으로, 처음부터 다시
-- 회전 안내: 경로에서 방향이 크게 바뀌는 곳을 뽑고 시나리오의 분기점 문구를 붙인다
-- ETA: 남은 경로를 구간 제한속도의 90%로 달린다고 보고 + 남은 경유지 체류 시간(시뮬레이션 시계, 출발 10:30)
-- 지도: 차량을 화면 아래 1/3에 고정, 진행 방향이 위. 지나온 길 회색, 남은 길 Active Blue. 배경 도로망·강은 시드 고정 절차 생성
+## 실행 방법
 
-## 대본(사람 손 없이 재생)
+### 1. 비용 없는 모의 서버 실행
 
-출발 전 합의: 엄마 두물머리 카페(확정). 이후 주행 거리에 맞춰 민준 화장실 급한 요청 → 홍천 휴게소 자동 확정, 서연 횡성 한우 식당 제안 + 엄마 찬성, 엄마 대관령 양떼목장(예산 초과), 민준 강릉 중앙시장(도착 후 일정). 응답이 없으면 10초 뒤 "다음 정차 때"로 넘어가고, 홍천 휴게소에 서면 "가족 제안 보기"로 비교 화면을 연다. 미룬 제안은 그 장소 2~6km 앞에서 한 번 더 묻는다.
-
-## 가족 폰 (같은 Wi-Fi)
-
-차량 앱이 8765 포트에 작은 웹 서버를 연다. 폰 브라우저에서 개발자 패널에 나온 주소(`http://<기기 IP>:8765/?k=<접속 코드>`)를 열면 도착 시각·들를 곳·운전자 결정이 실시간으로 뜬다. 외부 인터넷은 쓰지 않는다. `POST /api/event`로 `FamilyEvent` JSON(제안·투표·급한 요청)을 받을 자리도 열어 두었다(동승자 폰 앱은 아직 없음).
-
-에뮬레이터는 NAT 뒤라 폰이 직접 못 들어온다. 노트북에서 관리자 PowerShell로:
+Node.js 24 이상을 설치하고 저장소 루트에서 실행합니다.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File tools\phone-link.ps1          # adb forward + 포트 프록시 + 방화벽(개인 네트워크)
-powershell -ExecutionPolicy Bypass -File tools\phone-link.ps1 -Remove  # 해제
+npm --prefix server ci
+node tools/preview-phone.mjs 8789
 ```
 
-접속 코드 없이는 응답하지 않지만 인증·암호화는 없다. 데모용.
+PC에서는 `http://127.0.0.1:8789`를 엽니다. 이 모드는 AWS나 카카오 자격 증명이 필요하지 않습니다. 부산 예시 장소·예시 후기·고정된 모의 경로를 사용하므로 실제 길찾기 품질을 평가하는 모드가 아닙니다.
 
-## 빌드 (Windows, Android Studio 없이)
+### 2. 차량 앱 실행
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File build.ps1 :app:testDebugUnitTest :app:assembleDebug
-adb install -r -g app\build\outputs\apk\debug\app-debug.apk
+adb install -r "apk/familyroute_아빠어디가_release.apk"
 adb shell am start -n ai.familyroute.demo/.MainActivity
 ```
 
-경로를 바꾸려면 `tools/gen_scenario.py`를 고치고 `python3 tools/gen_scenario.py app/src/main/assets/scenario.json`.
+제출 APK는 제작 시점의 임시 HTTPS 시연 서버 주소를 포함합니다. 터널이나 PC 서버가 종료되면 연결되지 않습니다. 장기 운영 서버가 아니며, 독립 재현은 아래 방법으로 로컬 서버 주소를 지정해 빌드합니다.
 
-## 화면 크기
+```powershell
+# JDK 17/21 및 Android SDK 경로 설정 후 저장소 루트에서 실행
+.\gradlew.bat :app:assembleDebug -PfamilyServerUrl=http://10.0.2.2:8789
+adb install -r app\build\outputs\apk\debug\app-debug.apk
+```
 
-| 환경 | 화면 | 앱이 받는 영역 |
+휴대폰 참여까지 확인하려면 서버를 HTTPS로 접근 가능하게 준비하고 그 주소로 APK를 다시 빌드합니다. 초대 QR·링크는 HTTPS 주소 설정 시 나타납니다. `family-server.properties`에 `familyServerUrl=https://YOUR_SERVER`를 지정하거나 `-PfamilyServerUrl=...`을 사용합니다. 임시 주소와 가족방 토큰을 소스에 커밋하지 않습니다. [접속 설정](docs/PHONE_ACCESS.md)
+
+### 3. 심사 시연 순서
+
+1. PLEOS VM 기어를 P로 두고 아빠어디가를 실행합니다.
+2. 목적지 찾기에서 부산역을 선택합니다.
+3. 가족 메뉴에서 방을 만들고 휴대폰으로 링크/QR/초대 코드로 참여합니다.
+4. 휴대폰에서 광안리 등을 제안하고 차량에서 경유지로 수락합니다.
+5. 추천 코스의 장소 목록과 경유지 반영을 확인합니다. 모의 서버의 지도 선은 고정 예시입니다.
+6. 휴대폰에서 시험용 사진을 올립니다. 차량 사진 메뉴에서 먼저 가족방을 선택하고 해당 사진을 확인합니다.
+7. 시험용 사진의 삭제 버튼과 확인창으로 삭제하고 휴대폰에서도 사라지는지 확인합니다.
+
+## 테스트 환경 및 필요한 설정
+
+| 항목 | 설정 |
+|---|---|
+| 실행 환경 | Windows, Android Studio Pleos Connect AVD, Android Automotive |
+| 확인한 VM 해상도 | 2560×1440 |
+| Android | minSdk 28 / compileSdk·targetSdk 34 |
+| 언어·UI | Kotlin, Jetpack Compose |
+| 빌드 | Gradle wrapper 8.10.2, JDK 21에서 확인(Java target 17) |
+| 서버 | Node.js 24 이상, HTTP API, 휴대폰 웹 UI |
+| 차량 상태 | Android Automotive CarPropertyManager의 기어 상태 |
+| 위치·주행 | 서울 시연 출발 위치. 실제 차량 GPS·실도로 주행 검증 미완료 |
+
+PLEOS 기본 내비게이션에 경유지를 보내는 앱이 아니라 자체 지도/경로 UI를 사용합니다. Vehicle/FusedLocation/NaviHelper SDK 전체 연동을 완료했다고 주장하지 않습니다.
+
+## 카카오·AWS 연동 범위
+
+| 서비스 | 코드에 구현된 역할 | 설정/현재 시연과의 차이 |
 |---|---|---|
-| Pleos Connect v2.1.0 AVD | 2560×1440, 160dpi | **1682×1210dp** (mAppBounds `(853,90)-(2535,1300)`) |
-| 범용 Automotive AVD `Auto_1920x720` (android-35) | 1920×720, 160dpi | 1920×624dp, 상태바를 빼면 콘텐츠 1920×548dp |
+| 카카오 Local REST API | 키워드 장소 검색 | 서버의 `KAKAO_REST_API_KEY` 필요 |
+| 카카오모빌리티 Directions API | 목적지·최대 5개 경유지 도로 경로 조회 | 같은 서버 키를 전달하는 구조. 모의 서버에서는 외부 호출하지 않음 |
+| Amazon Cognito | 사용자 로그인·토큰 검증 | 아래 계정 환경 설정 필요. 기본 모의 서버에서는 미연결 |
+| Amazon DynamoDB | 계정별 저장 장소·개인 추억 경로 | 서버 자격 증명과 테이블 설정 필요 |
+| 로컬 암호화 보관 | 가족방·사진·커뮤니티 상태 복원 | `FAMILY_LOCAL_ARCHIVE_DIR`를 저장소 밖 경로로 설정한 dev 서버에서 사용 |
 
-우측 패널 470dp, 하단 가족 바 100dp만 고정하고 나머지는 지도. 높이가 낮으면 간격을 줄이고 들를 곳은 "외 N곳"으로 접는다(주행 화면이라 스크롤 없음). `Auto_1920x720` AVD는 C 드라이브 여유 공간 때문에 `D:\avd\`에 있고, 디스플레이가 2개라 스크린샷은 `adb exec-out screencap -p -d 4619827259835644672`.
+실제 연동은 `server/dev.mjs`를 사용합니다. `PORT=8789`, `KAKAO_REST_API_KEY`, 선택적으로 `FAMILY_SAMPLE_COURSES=1`을 환경 변수에 지정합니다. 계정 기능은 `AWS_REGION=ap-southeast-2`, `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID`, `COGNITO_AUTH_DOMAIN`, `SAVED_PLACES_TABLE`을 모두 설정하고 서버 실행 환경에 AWS 인증을 제공합니다. Cognito 콜백은 공개 주소의 `/account`와 일치해야 합니다. 키·비밀번호·인증서 개인키는 저장소/APK에 포함하지 않습니다.
 
-## 색과 폰트
+현재 제공하는 임시 미리보기 서버는 메모리 저장이므로 종료하면 사진·제안 등이 사라집니다. 로컬 보관 코드는 별도 설정이 필요하며 운영용 영구 서버·백업을 제공하는 상태가 아닙니다. AWS/카카오 실제 서비스 비용을 무료라고 보장하지 않으며, 기본 모의 실행은 두 서비스에 요청하지 않습니다. 이 제출 업데이트에서는 AWS 리소스를 생성하지 않았습니다.
 
-- 딥 네이비: Hyundai Blue `#002C5F`를 어둡게 뽑은 바탕(`#061528`), Active Blue `#00AAD2` 강조, Light Sand `#F6F3F2` 글자, Sand 계열 경고. 강조색 위 글자는 대비 때문에 흰색 대신 Hyundai Blue. `#002C5F` 외 값은 공식 가이드로 확인하지 않은 알려진 값. 로고는 쓰지 않는다
-- 가족 색(아빠·엄마·서연·민준)은 사양 그대로, 아바타에 항상 이름 첫 글자
-- Noto Sans KR(OFL) 400/500/700/900 고정 파일(가변 폰트에서 fonttools로 추출, 한자 제외 서브셋)
+## 검증
 
-## 시안과 다르게 한 부분
+```powershell
+node --test server/*.test.mjs
+.\gradlew.bat :app:testDebugUnitTest :app:assembleRelease
+```
 
-- 주행 중 버튼 높이 64 → 76dp(사양), Suggest 자동 넘김 6초 → 10초(사양)
-- 도착 시각에 체류 시간을 넣는다(사양). 그래서 Suggest 타일은 "+12분 / 우회 시간", "새 도착 · 50분 머묾 포함"
-- Decide: "출발하면 지도로 돌아가요", 가족 폰 문구는 연결된 폰이 있을 때 "결정 결과는 가족 폰 N대에 바로 알려져요"
-- 음성 버튼은 "음성 명령(데모)" 표시만(실제 인식 없음), 음성 힌트 "추가해"는 뺐다
-- 시안에 없는 것: 들를 곳 "도착 후"·"귀갓길" 칩, 급한 요청 알림 배너, 직진 안내 아이콘, 가까워지면 한 번 더 묻기
-- 색: 현대차 딥 네이비로 바꿈(배치·크기는 시안 그대로)
+2026-11-11 기준 서버 테스트 36개, Android 단위 테스트 26개 통과. PLEOS VM에서 가족방 선택 → 사진 표시 → 확인용 사진 삭제와 삭제 후 서버 접근 불가를 확인했습니다. 가족방 간 접근 차단·사진의 공개 코스 제외·삭제 권한은 자동 테스트에 포함됩니다. 실제 차량 주행·운전자 주의 분산에 대한 인증 시험은 수행하지 않았습니다.
 
-## Pleos 연동 메모 (Phase 5)
+## 소스 구조
 
-- 사양의 `ai.pleos.playground:Vehicle:2.3.1`은 Pleos 저장소에 없다. 있는 버전은 **2.0.3, 2.3.2**
-- 2.3.2 AAR에서 확인한 것: `Vehicle(context).initialize()`, `getGear().registerGearSelection(GearSelectionListener)`, `getCurrentGearSelectionState(...)`, `VehicleGear.GEAR_PARK/GEAR_DRIVE/...`
-- **차량 속도·위치 API는 Vehicle SDK에 없다**(크루즈 목표 속도, 누적 거리만). 속도는 AAOS 표준 `CarPropertyManager`로 읽는 방안(이전 프로젝트에서 에뮬레이터 동작 확인)
-- 계획: 위치는 시뮬레이터, 기어(필요하면 속도)는 실제 값을 쓰는 `PleosVehicleSource`. Virtual Console에서 P로 바꾸면 비교 화면 진입
+- `app/`: 최신 Android 앱, 차량 상태 제한, 가족방 클라이언트, 지도 UI
+- `server/`: 가족방·사진·검색·코스·계정 API와 웹 화면
+- `tools/preview-phone.mjs`: 외부 API 없이 실행하는 모의 서버
+- `server/dev.mjs`: 카카오·선택적 계정/로컬 보관 연동 서버
+- `apk/`: 공모전 제출 release APK
+- `docs/licenses/`: 포함 폰트 등 라이선스 자료
+
+저장소에는 초기 시뮬레이터 코드도 남아 있습니다. 최신 진입점은 `MainActivity`이며 이전 phase 문서보다 이 README를 우선합니다. 앱 아이콘은 제공된 가족 자동차 이미지에서 제작한 시연 자산이며 현대자동차 공식 앱을 의미하지 않습니다.
+
+## 제출 안내
+
+[공식 GitHub 제출 안내](https://appdevchallenge.auto-hmg.io/guide/submission#github)와 [개발 환경](https://appdevchallenge.auto-hmg.io/guide/development)에 맞춰 앱 소개·실행 방법·환경·APK 경로를 정리했습니다. 비공개 저장소이므로 제출자는 공지된 심사용 계정의 접근 권한을 별도로 확인해야 합니다. GitHub 업데이트가 참가 신청 이메일 제출을 대신하지 않습니다.

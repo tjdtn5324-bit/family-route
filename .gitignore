@@ -4,7 +4,19 @@ build/
 .idea/
 *.iml
 local.properties
+family-server.properties
 captures/
 *.apk
 *.mp4
 node_modules/
+
+# Private local runtime data and review captures
+.env
+.env.*
+*.jks
+*.keystore
+*.enc
+archive.key
+docs/review-2026-11-10/
+!apk/*_release.apk
+*.idsig

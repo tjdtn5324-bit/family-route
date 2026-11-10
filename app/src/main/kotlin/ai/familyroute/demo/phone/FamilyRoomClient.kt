@@ -27,16 +27,16 @@ class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_UR
     fun homeUrl(): String? = if (server.startsWith("https://")) "$server/" else null
     fun inviteUrl(room: LiveRoom): String? = if (server.startsWith("https://")) "$server/#invite=${room.invite}" else null
     fun localInviteUrl(room: LiveRoom): String = "http://127.0.0.1:8789/#invite=${room.invite}"
-    private suspend fun request(path: String, token: String? = null, body: JSONObject? = null): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, method: String = if (body != null) "POST" else "GET"): JSONObject = withContext(Dispatchers.IO) {
         val c = URL("$server$path").openConnection() as HttpURLConnection
         try {
             // 길찾기는 서버의 외부 API 제한 시간(12초)보다 여유 있게 기다린다.
-            c.connectTimeout = 5000; c.readTimeout = 20000
+            c.connectTimeout = 5000; c.readTimeout = 20000; c.requestMethod = method
             c.setRequestProperty("Accept", "application/json")
             if (path in listOf("/api/rooms", "/api/rooms/claim") && BuildConfig.FAMILY_ROOM_CREATE_SECRET.isNotEmpty()) c.setRequestProperty("X-Room-Create-Secret", BuildConfig.FAMILY_ROOM_CREATE_SECRET)
             if (token != null) c.setRequestProperty("Authorization", "Bearer $token")
             if (body != null) {
-                c.requestMethod = "POST"; c.doOutput = true
+                c.doOutput = true
                 c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
@@ -78,6 +78,7 @@ class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_UR
     }
 
     suspend fun addToRoute(room: LiveRoom, id: String) { request("/api/proposals/$id/route", room.driverToken, JSONObject()) }
+    suspend fun deletePhoto(room: LiveRoom, id: String) { request("/api/photos/$id", room.driverToken, method = "DELETE") }
     suspend fun photo(room: LiveRoom, id: String): ByteArray = android.util.Base64.decode(request("/api/photos/$id", room.driverToken).getString("data"), android.util.Base64.DEFAULT)
     suspend fun finishTrip(room: LiveRoom, choice: String) { request("/api/trip/finish", room.driverToken, JSONObject().put("choice", choice)) }
     suspend fun updateWaypoints(room: LiveRoom, ids: List<String>, version: Int) { request("/api/itinerary/waypoints", room.driverToken, JSONObject().put("ids", JSONArray(ids)).put("version", version)) }

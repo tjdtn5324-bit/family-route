@@ -17,7 +17,7 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
       const source = req.socket.remoteAddress || 'unknown';
       const forwarded = source === '127.0.0.1' || source === '::1' || source === '::ffff:127.0.0.1' ? req.headers['cf-connecting-ip'] : null;
       const ip = typeof forwarded === 'string' && forwarded.length < 80 ? forwarded : source;
-      const category = ['/api/places','/api/profile/search'].includes(url.pathname) ? 'search' : ['/api/rooms','/api/rooms/prepare','/api/rooms/claim'].includes(url.pathname) ? 'create' : 'general';
+      const category = ['/api/places','/api/profile/search'].includes(url.pathname) ? 'search' : ['/api/rooms','/api/rooms/prepare','/api/rooms/claim','/api/join','/api/join-code'].includes(url.pathname) ? 'create' : 'general';
       const key = `${ip}:${category}`;
       if (limits.size > 10000) for (const [k, v] of limits) if (v.until <= now) limits.delete(k);
       if (limits.size > 10000 && !limits.has(key)) return send(429, { error: '요청이 많습니다. 잠시 후 다시 시도해 주세요' });
@@ -46,6 +46,10 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
         const image = await readFile(new URL('./assets/busan-illustration.png', import.meta.url));
         res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' }); res.end(image); return;
       }
+      if (req.method === 'GET' && url.pathname === '/assets/appa-eodiga.png') {
+        const image = await readFile(new URL('./assets/appa-eodiga.png', import.meta.url));
+        res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' }); res.end(image); return;
+      }
       const body = async (maxSize = 16384) => {
         if (!(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) throw new Error('JSON 요청이 필요합니다');
         const chunks = []; let size = 0;
@@ -70,6 +74,8 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
         if (createSecret) {const expected=Buffer.from(createSecret), supplied=Buffer.from(String(req.headers['x-room-create-secret']||'')); if (expected.length!==supplied.length||!timingSafeEqual(expected,supplied)) return send(403,{error:'차량 등록이 필요합니다'});}
         return send(200,rooms.claimPairing((await body()).code));
       }
+      if (req.method === 'POST' && url.pathname === '/api/rooms/invite-code') { await body(); return send(200, rooms.inviteCode(auth)); }
+      if (req.method === 'POST' && url.pathname === '/api/join-code') { const b = await body(); return send(201, rooms.joinWithCode(b.code,b.name)); }
       if (req.method === 'POST' && url.pathname === '/api/join') { const b = await body(); return send(201, rooms.join(b.invite, b.name)); }
       if (req.method === 'GET' && url.pathname === '/api/state') return send(200, rooms.state(auth));
       if (req.method === 'POST' && url.pathname === '/api/trip/finish') return send(200,{trip:rooms.finishTrip(auth,(await body()).choice)});

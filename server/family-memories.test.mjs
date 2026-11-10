@@ -20,6 +20,12 @@ test('가족방 사진은 같은 방만 접근하고 공개 코스에는 사진�
  const course=await call('/api/courses',{token:member.memberToken,data:{title:'부산 여행',description:'함께 가요'}});assert.equal(course.status,201);
  const publicList=(await call('/api/public/courses')).data;assert.equal(publicList.courses.length,1);assert.equal(JSON.stringify(publicList).includes(jpeg),false);assert.equal(JSON.stringify(publicList).includes(photo.data.id),false);
  assert.equal((await call('/api/photos/'+photo.data.id,{token:member.memberToken,method:'DELETE'})).status,200);
+ const vehiclePhoto=(await call('/api/photos',{token:member.memberToken,data:{data:jpeg}})).data;
+ assert.equal((await call('/api/photos/'+vehiclePhoto.id,{token:other.driverToken,method:'DELETE'})).status,400);
+ assert.equal((await call('/api/photos/'+vehiclePhoto.id,{token:room.driverToken,method:'DELETE'})).status,200);
+ assert.equal((await call('/api/photos/'+vehiclePhoto.id,{token:member.memberToken})).status,400);
+ assert.equal((await call('/api/state',{token:peer.memberToken})).data.photos.length,0);
+
 });
 
 test('종료한 경로는 개인 계정에만 저장되고 좋아요는 계정별 한 번만 반영된다',async t=>{

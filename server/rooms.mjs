@@ -42,6 +42,7 @@ export class Rooms {
   #reviews = new Map();
   #activity = new Map();
   #pairings = new Map();
+  #joinCodes = new Map();
   #permanentMemories = false;
 
   #waypoints(room) {
@@ -118,6 +119,25 @@ export class Rooms {
     this.#sessions.set(memberToken, { roomId: room.id, role: 'member', ...member });
     this.#notify(room);
     return { memberToken, roomId: room.id };
+  }
+
+  inviteCode(auth) {
+    const member = this.session(auth);
+    for (const [key, value] of this.#joinCodes) if (value.expiresAt <= Date.now()) this.#joinCodes.delete(key);
+    const old = [...this.#joinCodes].find(([,v]) => v.roomId === member.roomId);
+    if (old) return {code:old[0],expiresAt:old[1].expiresAt};
+    const invite = [...this.#invites].find(([,id]) => id === member.roomId)?.[0];
+    if (!invite) throw new Error('가족방을 다시 확인해 주세요');
+    let code; do { code=randomBytes(5).toString('hex').toUpperCase(); } while(this.#joinCodes.has(code));
+    const expiresAt=Date.now()+600000;
+    this.#joinCodes.set(code,{invite,roomId:member.roomId,expiresAt});
+    return {code,expiresAt};
+  }
+  joinWithCode(code,name) {
+    const key=typeof code==='string'?code.replace(/[\s-]/g,'').toUpperCase():'';
+    const entry=this.#joinCodes.get(key);
+    if(!entry || entry.expiresAt<=Date.now()) throw new Error('초대 코드가 만료됐거나 올바르지 않아요. 가족에게 새 코드를 요청해 주세요.');
+    return {...this.join(entry.invite,name),invite:entry.invite};
   }
 
   pairing(auth) {

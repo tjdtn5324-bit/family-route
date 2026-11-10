@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -16,7 +18,11 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1-phase1"
-        val roomUrl = providers.gradleProperty("familyServerUrl").orElse("http://10.0.2.2:8789").get()
+        val localRoomConfig = Properties().apply {
+            rootProject.file("family-server.properties").takeIf { it.isFile }?.inputStream()?.use { load(it) }
+        }
+        val roomUrl = providers.gradleProperty("familyServerUrl")
+            .orElse(localRoomConfig.getProperty("familyServerUrl", "http://10.0.2.2:8789")).get()
         require(roomUrl == "http://10.0.2.2:8789" || roomUrl.startsWith("https://")) { "familyServerUrl must use HTTPS" }
         buildConfigField("String", "FAMILY_SERVER_URL", "\"${roomUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
         val roomSecret = providers.environmentVariable("FAMILY_ROOM_CREATE_SECRET").orElse("").get()
