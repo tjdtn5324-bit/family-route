@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>우리 차 소식</title>
+<style>
+  :root {
+    --bg: #061528; --panel: #0C2240; --panel2: #12305A; --line: #1E3A63;
+    --text: #F6F3F2; --sub: #9FB3C8; --accent: #00AAD2; --warn: #E8B97E;
+    --mom: #FF9F43; --seoyeon: #2DD4BF; --minjun: #FACC15; --dad: #3D8BFF;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, "Noto Sans KR", sans-serif; }
+  main { max-width: 520px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+  .head { display: flex; justify-content: space-between; align-items: center; }
+  .head h1 { font-size: 20px; margin: 0; }
+  .live { font-size: 13px; color: var(--sub); display: flex; align-items: center; gap: 6px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: #64748b; }
+  .live.on .dot { background: #34D399; }
+  .card { background: var(--panel); border-radius: 16px; padding: 14px 16px; }
+  .eta { display: flex; justify-content: space-between; align-items: flex-end; }
+  .eta b { font-size: 36px; font-weight: 900; line-height: 1.1; }
+  .sub { color: var(--sub); font-size: 14px; }
+  .bar { height: 10px; border-radius: 5px; background: var(--line); overflow: hidden; display: flex; margin-top: 8px; }
+  .stop { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .av { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; color: #061528; flex: none; }
+  .chip { margin-left: auto; font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; border: 1.5px solid var(--sub); color: var(--sub); white-space: nowrap; }
+  .chip.CONFIRMED { background: var(--accent); border-color: var(--accent); color: #002C5F; }
+  .chip.PENDING { border-color: var(--warn); color: var(--warn); }
+  .feed { display: flex; flex-direction: column; gap: 8px; }
+  .msg { background: var(--panel2); border-radius: 12px; padding: 10px 12px; display: flex; gap: 10px; animation: in .3s ease; }
+  .msg time { color: var(--sub); font-size: 12px; flex: none; padding-top: 2px; }
+  @keyframes in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  h2 { font-size: 15px; color: var(--sub); margin: 0 0 6px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="head">
+    <h1>우리 차 소식</h1>
+    <span class="live" id="live"><span class="dot"></span><span id="liveText">연결 중</span></span>
+  </div>
+  <div class="card sub">시연 모드 · 차량 위치, 경로와 도착 시간은 가상 데이터입니다.</div>
+  <div class="card">
+    <div class="eta">
+      <div><div class="sub" id="dest">도착 예정</div><b id="eta">--:--</b></div>
+      <div class="sub" id="remain" style="text-align:right"></div>
+    </div>
+    <div class="sub" style="margin-top:10px" id="budgetText"></div>
+    <div class="bar" id="budget"></div>
+  </div>
+  <div class="card">
+    <h2>들를 곳</h2>
+    <div id="stops"></div>
+  </div>
+  <div>
+    <h2>새 소식</h2>
+    <div class="feed" id="feed"></div>
+  </div>
+</main>
+<script>
+  const colors = { dad: 'var(--dad)', mom: 'var(--mom)', seoyeon: 'var(--seoyeon)', minjun: 'var(--minjun)' };
+  const initials = { dad: '아', mom: '엄', seoyeon: '서', minjun: '민' };
+  const chipText = { CONFIRMED: '확정', PENDING: '대기', AFTER_ARRIVAL: '도착 후', RETURN_TRIP: '귀갓길' };
+  const k = new URLSearchParams(location.search).get('k') || '';
+  const el = id => document.getElementById(id);
+  function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  function avatar(id) { return `<span class="av" style="background:${colors[id] || '#64748b'}">${initials[id] || '·'}</span>`; }
+  function renderState(s) {
+    el('dest').textContent = s.destination + ' 도착';
+    el('eta').textContent = s.eta;
+    el('remain').innerHTML = esc(s.remaining) + '<br>' + esc(s.distance);
+    el('budgetText').textContent = `가족 여유시간 ${s.budgetTotal}분 중 ${s.budgetUsed}분 사용`;
+    el('budget').innerHTML = s.budget.map(b => `<span style="width:${b.minutes / s.budgetTotal * 100}%;background:${colors[b.memberId]}"></span>`).join('');
+    el('stops').innerHTML = s.stops.map(x => `<div class="stop">${avatar(x.memberId)}<div><div>${esc(x.name)}</div><div class="sub">${esc(x.detail)}</div></div><span class="chip ${x.status}">${chipText[x.status] || ''}</span></div>`).join('') || '<div class="sub">아직 없어요</div>';
+    if (el('feed').children.length === 0) s.recent.slice().reverse().forEach(addMsg);
+  }
+  function addMsg(m) {
+    const div = document.createElement('div');
+    div.className = 'msg';
+    div.innerHTML = `<time>${esc(m.time)}</time>${m.memberId ? avatar(m.memberId) : ''}<span>${esc(m.text)}</span>`;
+    el('feed').prepend(div);
+  }
+  function connect() {
+    const es = new EventSource('/events?k=' + encodeURIComponent(k));
+    es.addEventListener('state', e => renderState(JSON.parse(e.data)));
+    es.addEventListener('msg', e => addMsg(JSON.parse(e.data)));
+    es.onopen = () => { el('live').classList.add('on'); el('liveText').textContent = '실시간'; };
+    es.onerror = () => { el('live').classList.remove('on'); el('liveText').textContent = '다시 연결 중'; };
+  }
+  connect();
+</script>
+</body>
+</html>

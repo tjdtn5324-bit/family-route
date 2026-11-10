@@ -1,34 +1,64 @@
 # family-route-demo
 
-Pleos Connect(Android Automotive) 헤드유닛용 가족 경로 데모 앱. 가족이 들를 곳을 제안하면 운전자가 주행 화면에서 정한다. 실제 차량 이동 대신 더미 주행 시뮬레이터를 쓴다(Phase 2부터).
+Pleos Connect(Android Automotive) 헤드유닛용 가족 경로 데모 앱. 달리는 차 안에서 가족이 들를 곳을 제안하면 운전자가 주행 화면에서 정한다. 실제 차량 이동 대신 **더미 주행 시뮬레이터**가 서울 → 강릉(가상 경로 192km)을 달린다.
 
-## 현재 상태: Phase 1 + 화면 동작 (차량 이동은 Phase 2)
+## 상태
 
-- Kotlin + Jetpack Compose, 단일 Activity, 상태 기반 화면 전환(내비게이션 라이브러리 없음)
-- `TripEngine`이 유일한 상태 주인. 화면은 `StateFlow`를 읽고 `UiAction`만 보낸다. DI 없이 `TripViewModel`에서 수동 주입
-- 화면 4개 + 개발자 패널이 모두 동작:
-  - **MainScreen**: 지도, 회전 안내, 우측 패널(도착·예산·들를 곳), 가족 바. "들를 곳 N"을 누르면 타임라인
-  - **SuggestOverlay**: 주행 중 가족 제안이 운전자 확인 대기가 되면 자동으로 뜬다(한 번에 하나). 10초 자동 "다음 정차 때", 남은 시간 막대, 지도 점선 미리보기
-  - **DecideScreen**: 기어 P로 3초 이상 정지한 뒤 "가족 제안 보기". 카드에서 고르고 "이대로 출발"(또는 기어 D로 출발하면 고른 대로 반영하고 닫힘)
-  - **TimelineScreen**: 출발~도착 타임라인, "지금" 마커, 사람별 사용 시간(예산 막대와 같은 값), 남은 제안권
-  - **개발자 패널**: 하단 "아빠" 아바타 길게 누르기. 기어 P/D, 다음 경유지로 점프, 제안·투표·급한 요청 주입, 리셋, 상태 표시
-- 규칙: 예산 30분(우회 시간만 차감), 제안권 1인 2회, 급한 요청은 제안권 없이 가장 가까운 앞쪽 휴게소 자동 확정 + 알림, 예산 초과 → 귀갓길 추천, 목적지 5km 안 → 도착 후 일정 추천
-- 입력: 터치 + DPAD. 첫 DPAD 키는 Android가 키 조작 모드 전환에 쓰고, 그때 포커스 테두리가 나타난다. 다음 키부터 좌우 이동, 가운데·Enter로 선택. 뒤로 가기 키는 메인으로
-- `FamilyEvent`(제안·투표·급한 요청)는 kotlinx.serialization data class. 동승자 폰을 붙일 때 같은 JSON을 받으면 된다
-- 지도는 `MapRenderer` 인터페이스 뒤의 임시 구현(`MockupMapRenderer`, 시안 그림). 차량 위치·회전 안내·도로명은 고정값이고 Phase 2 시뮬레이터에서 실제로 움직인다
+| 단계 | 내용 | 상태 |
+|---|---|---|
+| Phase 1 | 골격, 테마, 폰트, 메인 화면 | 완료 |
+| Phase 2 | scenario.json, 시뮬레이터, 움직이는 지도, 회전 안내, ETA | 완료 |
+| Phase 3 | 제안 상태머신, SuggestOverlay, 대본 재생, 우회 경로 교체, DPAD | 완료 |
+| Phase 4 | DecideScreen, TimelineScreen, 개발자 패널 | 완료 |
+| 추가 | 가족 폰 실시간 소식(같은 Wi-Fi), 가까워지면 한 번 더 묻기, 현대차 딥 네이비 색 | 완료 |
+| Phase 5 | Pleos Vehicle SDK 연동 | 남음 (아래 "Pleos 연동 메모") |
 
-### 임시로 둔 것 (Phase 2~3에서 교체)
+## 구조
 
-| 지금 | 바뀔 것 |
-|---|---|
-| `ManualVehicleSource`(개발자 패널로 기어·위치 조작) | `SimulatedVehicleSource` |
-| `DemoCatalog`(장소·거리 하드코딩) | `assets/scenario.json` |
-| `DemoStart`(시안 Main 순간을 재현한 시작 상태) | `ScriptedFamilySource`가 주행 거리에 맞춰 이벤트 발생 |
-| 도착 시각 = 평균 속도 계산 | 시뮬레이터 남은 거리·구간 속도 기반 |
+```
+assets/scenario.json  (tools/gen_scenario.py로 생성: 경로·장소·우회 폴리라인·대본)
+        │
+SimulatedVehicleSource ──► TripEngine ◄── FamilyEventSource
+ (TripSimulator, 10Hz)       │ 유일한 상태 주인   ├ ScriptedFamilySource (대본, 주행 거리 기준)
+                             │                    ├ DevPanelFamilySource (개발자 패널)
+                             │                    └ PhoneFamilySource (가족 폰 POST)
+                             │ StateFlow → UiMapper → TripUiState
+                             ▼
+ Compose: MainScreen / SuggestOverlay / DecideScreen / TimelineScreen / DevPanel
+ PhoneLinkServer: 상태 변화 → 가족 폰 브라우저(SSE)
+```
+
+- `TripEngine`이 경로도 소유한다. 경유지가 확정되면 `ActiveRoute.build`로 우회 폴리라인을 끼운 새 경로를 만들고 시뮬레이터가 따라간다(차 위치는 같은 지점으로 다시 맞춤).
+- `MapRenderer` 인터페이스 뒤에 `CanvasMapRenderer`(오프라인 Canvas 지도). MapLibre 등으로 바꿀 때 이것만 새로 구현.
+- DI 프레임워크 없이 `TripViewModel`에서 수동 주입.
+
+## 시뮬레이터
+
+- 경로: 주요 지점을 곡선으로 잇고 시드 고정 굴곡을 넣어 200m 간격으로 나눈 가상 좌표(실제 길찾기 아님). 분기점 6곳(팔당, 서종IC, 중앙고속도로, 만종JC, 대관령IC, 경포해변)은 실제로 꺾이게 배치
+- 속도: 구간 제한속도(일반도로 60, 올림픽대로 80, 고속도로 100)까지 ±2.5m/s² 가감속, 큰 회전 앞 감속, 경유지 앞에서 멈춤 → 기어 P → 체류 → 재출발
+- 배속 기본 ×20(약 2시간 10분 주행이 6분 30초 안팎), 개발자 패널에서 ×1/×5/×20/×60, 일시정지, 세우기, 다음 경유지 직전으로, 처음부터 다시
+- 회전 안내: 경로에서 방향이 크게 바뀌는 곳을 뽑고 시나리오의 분기점 문구를 붙인다
+- ETA: 남은 경로를 구간 제한속도의 90%로 달린다고 보고 + 남은 경유지 체류 시간(시뮬레이션 시계, 출발 10:30)
+- 지도: 차량을 화면 아래 1/3에 고정, 진행 방향이 위. 지나온 길 회색, 남은 길 Active Blue. 배경 도로망·강은 시드 고정 절차 생성
+
+## 대본(사람 손 없이 재생)
+
+출발 전 합의: 엄마 두물머리 카페(확정). 이후 주행 거리에 맞춰 민준 화장실 급한 요청 → 홍천 휴게소 자동 확정, 서연 횡성 한우 식당 제안 + 엄마 찬성, 엄마 대관령 양떼목장(예산 초과), 민준 강릉 중앙시장(도착 후 일정). 응답이 없으면 10초 뒤 "다음 정차 때"로 넘어가고, 홍천 휴게소에 서면 "가족 제안 보기"로 비교 화면을 연다. 미룬 제안은 그 장소 2~6km 앞에서 한 번 더 묻는다.
+
+## 가족 폰 (같은 Wi-Fi)
+
+차량 앱이 8765 포트에 작은 웹 서버를 연다. 폰 브라우저에서 개발자 패널에 나온 주소(`http://<기기 IP>:8765/?k=<접속 코드>`)를 열면 도착 시각·들를 곳·운전자 결정이 실시간으로 뜬다. 외부 인터넷은 쓰지 않는다. `POST /api/event`로 `FamilyEvent` JSON(제안·투표·급한 요청)을 받을 자리도 열어 두었다(동승자 폰 앱은 아직 없음).
+
+에뮬레이터는 NAT 뒤라 폰이 직접 못 들어온다. 노트북에서 관리자 PowerShell로:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\phone-link.ps1          # adb forward + 포트 프록시 + 방화벽(개인 네트워크)
+powershell -ExecutionPolicy Bypass -File tools\phone-link.ps1 -Remove  # 해제
+```
+
+접속 코드 없이는 응답하지 않지만 인증·암호화는 없다. 데모용.
 
 ## 빌드 (Windows, Android Studio 없이)
-
-JDK 21(`C:\dev\tools\jdk-21*`)과 Android SDK(`%LOCALAPPDATA%\Android\Sdk`)를 쓴다.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File build.ps1 :app:testDebugUnitTest :app:assembleDebug
@@ -36,30 +66,35 @@ adb install -r -g app\build\outputs\apk\debug\app-debug.apk
 adb shell am start -n ai.familyroute.demo/.MainActivity
 ```
 
+경로를 바꾸려면 `tools/gen_scenario.py`를 고치고 `python3 tools/gen_scenario.py app/src/main/assets/scenario.json`.
+
 ## 화면 크기
 
 | 환경 | 화면 | 앱이 받는 영역 |
 |---|---|---|
-| Pleos Connect v2.1.0 AVD | 2560×1440, 160dpi | **1682×1210dp** (왼쪽 주행 정보·위쪽 상태바·아래쪽 공조 바 제외. `dumpsys`의 mAppBounds `(853,90)-(2535,1300)`) |
-| 범용 Automotive AVD `Auto_1920x720` (android-35 automotive) | 1920×720, 160dpi | **1920×624dp** (아래 내비 바 96dp 제외). 위쪽 상태바 76dp가 겹쳐서 콘텐츠는 1920×548dp |
-| 시안 | 1600×600 | — |
+| Pleos Connect v2.1.0 AVD | 2560×1440, 160dpi | **1682×1210dp** (mAppBounds `(853,90)-(2535,1300)`) |
+| 범용 Automotive AVD `Auto_1920x720` (android-35) | 1920×720, 160dpi | 1920×624dp, 상태바를 빼면 콘텐츠 1920×548dp |
 
-레이아웃은 우측 패널 폭 470dp, 하단 가족 바 높이 100dp만 고정하고 나머지는 지도가 차지한다.
-우측 패널은 높이가 500dp(시안)보다 낮으면 간격을 줄이고, 그래도 안 들어가는 "들를 곳" 줄은 "외 N곳"으로 접는다(주행 화면이라 스크롤 없음).
+우측 패널 470dp, 하단 가족 바 100dp만 고정하고 나머지는 지도. 높이가 낮으면 간격을 줄이고 들를 곳은 "외 N곳"으로 접는다(주행 화면이라 스크롤 없음). `Auto_1920x720` AVD는 C 드라이브 여유 공간 때문에 `D:\avd\`에 있고, 디스플레이가 2개라 스크린샷은 `adb exec-out screencap -p -d 4619827259835644672`.
 
-비교 스크린샷: [docs/phase1/compare_pleos.png](docs/phase1/compare_pleos.png), [docs/phase1/compare_auto_1920x720.png](docs/phase1/compare_auto_1920x720.png)
+## 색과 폰트
 
-`Auto_1920x720` AVD는 데이터 파티션이 7.2GB로 고정이라 C 드라이브 여유 공간이 모자라 `D:\avd\`에 두었다. 이 이미지는 디스플레이가 2개라 스크린샷은 `adb exec-out screencap -p -d 4619827259835644672`로 찍는다.
-
-## 폰트
-
-Noto Sans KR 가변 폰트(google/fonts)에서 fonttools로 굵기 400/500/700/900 고정 파일을 뽑고, 한자를 뺀 서브셋(한글·라틴·문장부호·화살표·원문자)을 `res/font`에 넣었다(각 약 2.9MB). 가변 폰트 한 파일에 굵기 설정을 거는 방식은 Pleos AVD에서 900이 700처럼 얇게 나와 쓰지 않는다.
+- 딥 네이비: Hyundai Blue `#002C5F`를 어둡게 뽑은 바탕(`#061528`), Active Blue `#00AAD2` 강조, Light Sand `#F6F3F2` 글자, Sand 계열 경고. 강조색 위 글자는 대비 때문에 흰색 대신 Hyundai Blue. `#002C5F` 외 값은 공식 가이드로 확인하지 않은 알려진 값. 로고는 쓰지 않는다
+- 가족 색(아빠·엄마·서연·민준)은 사양 그대로, 아바타에 항상 이름 첫 글자
+- Noto Sans KR(OFL) 400/500/700/900 고정 파일(가변 폰트에서 fonttools로 추출, 한자 제외 서브셋)
 
 ## 시안과 다르게 한 부분
 
-- 하단 "가족 제안 보기"·음성 버튼 높이 64 → **76dp** (사양: 주행 중 누르는 버튼 76dp 이상)
-- 음성 버튼을 누르면 "음성 명령(데모)" 표시만 잠깐 나온다(실제 음성 인식 없음)
-- Suggest 자동 넘김 6초 → **10초**(사양), 남은 초를 실제로 센다. 음성 힌트 “추가해”는 음성 인식이 없어 뺐다
-- Suggest 타일: 사양대로 도착 시각에 체류 시간을 넣어서 "+12분 / 도착이 늦어져요" 대신 "+12분 / 우회 시간", "15:54 / 새 도착 · 50분 머묾 포함"으로 표시(시안 숫자 15:04는 체류를 뺀 값이라 사양과 맞지 않음)
-- Decide: "출발하면 이 화면은 요약으로 접혀요" → "출발하면 지도로 돌아가요", "결정 결과는 가족 폰에 바로 알려져요"는 폰 연결이 없어 뺐다. "✓" 문자 → 벡터 아이콘
-- 시안에 없는 것: 들를 곳의 "도착 후"·"귀갓길" 칩, 급한 요청 알림 배너(사양 "화면에 알림만"), "가족 제안 보기"는 대기 제안이 없으면 테두리 버튼
+- 주행 중 버튼 높이 64 → 76dp(사양), Suggest 자동 넘김 6초 → 10초(사양)
+- 도착 시각에 체류 시간을 넣는다(사양). 그래서 Suggest 타일은 "+12분 / 우회 시간", "새 도착 · 50분 머묾 포함"
+- Decide: "출발하면 지도로 돌아가요", 가족 폰 문구는 연결된 폰이 있을 때 "결정 결과는 가족 폰 N대에 바로 알려져요"
+- 음성 버튼은 "음성 명령(데모)" 표시만(실제 인식 없음), 음성 힌트 "추가해"는 뺐다
+- 시안에 없는 것: 들를 곳 "도착 후"·"귀갓길" 칩, 급한 요청 알림 배너, 직진 안내 아이콘, 가까워지면 한 번 더 묻기
+- 색: 현대차 딥 네이비로 바꿈(배치·크기는 시안 그대로)
+
+## Pleos 연동 메모 (Phase 5)
+
+- 사양의 `ai.pleos.playground:Vehicle:2.3.1`은 Pleos 저장소에 없다. 있는 버전은 **2.0.3, 2.3.2**
+- 2.3.2 AAR에서 확인한 것: `Vehicle(context).initialize()`, `getGear().registerGearSelection(GearSelectionListener)`, `getCurrentGearSelectionState(...)`, `VehicleGear.GEAR_PARK/GEAR_DRIVE/...`
+- **차량 속도·위치 API는 Vehicle SDK에 없다**(크루즈 목표 속도, 누적 거리만). 속도는 AAOS 표준 `CarPropertyManager`로 읽는 방안(이전 프로젝트에서 에뮬레이터 동작 확인)
+- 계획: 위치는 시뮬레이터, 기어(필요하면 속도)는 실제 값을 쓰는 `PleosVehicleSource`. Virtual Console에서 P로 바꾸면 비교 화면 진입

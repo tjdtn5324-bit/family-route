@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 같은 Wi-Fi의 가족 폰에 결정 결과를 보내는 로컬 서버 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
+
     <uses-feature
         android:name="android.hardware.type.automotive"
         android:required="true" />
@@ -9,7 +13,9 @@
         android:allowBackup="false"
         android:icon="@drawable/ic_app"
         android:label="@string/app_name"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.FamilyRoute">
+        <uses-library android:name="android.car" android:required="false" />
 
         <activity
             android:name=".MainActivity"

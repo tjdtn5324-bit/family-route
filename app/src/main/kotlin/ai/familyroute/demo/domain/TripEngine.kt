@@ -3,6 +3,7 @@ package ai.familyroute.demo.domain
 import ai.familyroute.demo.model.FamilyMember
 import ai.familyroute.demo.model.eulReul
 import ai.familyroute.demo.model.eunNeun
+import ai.familyroute.demo.route.ActiveRoute
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,16 +12,16 @@ import kotlinx.coroutines.flow.asStateFlow
  * 주행·가족 제안 상태의 유일한 주인. UI는 [state]를 읽고 아래 함수로 이벤트만 보낸다.
  * 시간은 밖에서 [tick]으로 넣어 준다(테스트에서 시계를 마음대로 돌릴 수 있게).
  */
-class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(nowMs)) {
-    private val _state = MutableStateFlow(DemoStart.state(nowMs, initialVehicle))
+class TripEngine(private val scenario: Scenario, nowMs: Long, initialVehicle: VehicleState) {
+    private val _state = MutableStateFlow(DemoStart.state(scenario, nowMs, initialVehicle))
     val state: StateFlow<EngineState> = _state.asStateFlow()
 
     private inline fun mutate(block: (EngineState) -> EngineState) {
         _state.value = block(_state.value)
     }
 
-    fun reset(nowMs: Long, vehicle: VehicleState = DemoStart.vehicle(nowMs)) {
-        _state.value = DemoStart.state(nowMs, vehicle)
+    fun reset(nowMs: Long, vehicle: VehicleState) {
+        _state.value = DemoStart.state(scenario, nowMs, vehicle)
     }
 
     // ---------- 입력: 시간·차량·가족 ----------
@@ -34,9 +35,14 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
 
     fun onVehicle(v: VehicleState) = mutate { s0 ->
         val still = v.gear == Gear.P && v.speedKph == 0.0
-        var s = s0.copy(vehicle = v, stillSinceMs = if (still) (s0.stillSinceMs ?: s0.nowMs) else null)
+        var s = s0.copy(
+            vehicle = v,
+            stillSinceMs = if (still) (s0.stillSinceMs ?: s0.nowMs) else null,
+            parkedSinceSimMs = if (v.gear == Gear.P) (s0.parkedSinceSimMs ?: v.timestampMs) else null,
+        )
+        s.currentStop?.let { here -> if (here.place.id !in s.visits) s = s.copy(visits = s.visits + (here.place.id to v.timestampMs)) }
         // 다시 출발하면 정차 화면은 고른 대로 반영하고 닫는다
-        if (s.isDriving && s.screen == Screen.DECIDE) s = commitDecide(s)
+        if (s.isDriving && s.screen == Screen.DECIDE) s = syncRoute(commitDecide(s))
         autoPresent(s)
     }
 
@@ -46,7 +52,7 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
             is FamilyEvent.Vote -> onVote(s, e)
             is FamilyEvent.UrgentRequest -> onUrgent(s, e)
         }
-        autoPresent(result)
+        autoPresent(syncRoute(result))
     }
 
     // ---------- 입력: 운전자 화면 ----------
@@ -67,7 +73,7 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
     /** 오버레이 첫 버튼: 예산 안이면 경유 추가, 아니면 추천한 대로(귀갓길/도착 후) */
     fun suggestPrimary() = mutate { s ->
         val p = s.suggest?.let { s.proposal(it.proposalId) } ?: return@mutate s
-        resolveSuggest(s, recommendedOutcome(p, s.budgetLeftMin))
+        syncRoute(resolveSuggest(s, recommendedOutcome(p, s.budgetLeftMin, s.isUnreachable(p.place))))
     }
 
     fun suggestDefer() = mutate { s -> if (s.suggest == null) s else resolveSuggest(s, ProposalStatus.NEXT_STOP) }
@@ -78,7 +84,7 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
 
     fun backToMain() = mutate { s ->
         when (s.screen) {
-            Screen.DECIDE -> commitDecide(s)
+            Screen.DECIDE -> syncRoute(commitDecide(s))
             else -> s.copy(screen = Screen.MAIN)
         }
     }
@@ -89,22 +95,39 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
         if (id in s.decideChoices) {
             s.copy(decideChoices = s.decideChoices - id)
         } else {
-            s.copy(decideChoices = s.decideChoices + (id to recommendedOutcome(p, decideBudgetLeft(s, exclude = id))))
+            s.copy(decideChoices = s.decideChoices + (id to recommendedOutcome(p, decideBudgetLeft(s, exclude = id), s.isUnreachable(p.place))))
         }
     }
 
-    fun decideDepart() = mutate { s -> commitDecide(s) }
+    fun decideDepart() = mutate { s -> syncRoute(commitDecide(s)) }
 
     fun setDevPanel(open: Boolean) = mutate { s -> s.copy(devPanelOpen = open) }
 
     // ---------- 규칙 ----------
 
+    /**
+     * 확정 경유지가 바뀌면 경로를 다시 만든다(우회 폴리라인 교체).
+     * 이탈 지점을 이미 지난 곳은 경로에 넣을 수 없어 귀갓길로 돌린다.
+     */
+    private fun syncRoute(s0: EngineState): EngineState {
+        var s = s0
+        val wanted = s.accepted.map { it.place.id }.toSet()
+        if (wanted == s.routeRequest) return s
+        for (r in s.accepted) {
+            if (r.place.id !in s.routeRequest && s.isUnreachable(r.place)) {
+                s = s.replace(r.copy(status = ProposalStatus.RETURN_TRIP))
+                    .withNotice("${r.place.name} 입구를 지나서 돌아오는 길에 들러요", r.member)
+            }
+        }
+        val ids = s.accepted.map { it.place.id }.toSet()
+        return s.copy(route = ActiveRoute.build(scenario, ids), routeRequest = ids)
+    }
+
     private fun onProposal(s: EngineState, e: FamilyEvent.Proposal): EngineState {
         val member = FamilyMember.byId(e.memberId) ?: return s
         if (member.isDriver) return s
-        val place = DemoCatalog.place(e.placeId) ?: return s
-        if ((s.tokens[member] ?: 0) <= 0) return s.withNotice("${member.displayName} 제안권을 다 썼어요", member)
-        if (s.proposals.any { it.place.id == place.id && it.status != ProposalStatus.SKIPPED }) {
+        val place = scenario.place(e.placeId) ?: return s
+        if (s.proposals.any { it.place.id == place.id && it.status != ProposalStatus.SKIPPED && it.status != ProposalStatus.RETURN_TRIP }) {
             return s.withNotice("${place.name.eunNeun()} 이미 들어온 제안이에요", member)
         }
         val created = ProposalRecord(
@@ -116,21 +139,49 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
             votes = emptyMap(),
             createdAtMs = s.nowMs,
         )
-        // 들어오자마자 가족 투표를 시작한다
-        val voting = evaluateVotes(created.copy(status = ProposalStatus.VOTING))
+        // 들어오자마자 가족 투표를 시작하고 운전자 화면에도 바로 보인다(횟수 제한 없음)
+        val voting = created.copy(status = ProposalStatus.VOTING)
         return s.copy(
             proposals = s.proposals + voting,
-            tokens = s.tokens + (member to (s.tokens[member] ?: 0) - 1),
             nextSeq = s.nextSeq + 1,
+            lastProposalId = voting.id,
         )
     }
 
     private fun onVote(s: EngineState, e: FamilyEvent.Vote): EngineState {
         val voter = FamilyMember.byId(e.memberId) ?: return s
-        val p = s.proposal(e.proposalId) ?: return s
+        // 대본은 엔진이 붙인 id를 모르므로 "@last" = 가장 최근 제안
+        val id = if (e.proposalId == "@last") s.lastProposalId ?: return s else e.proposalId
+        val p = s.proposal(id) ?: return s
         if (!p.status.undecided || voter !in p.voters) return s
-        val updated = evaluateVotes(p.copy(votes = p.votes + (voter to e.choice)))
-        return s.replace(updated)
+        return applyMajority(s.replace(p.copy(votes = p.votes + (voter to e.choice))), id)
+    }
+
+    /**
+     * 가족 과반수(운전자 포함 4명 중 3명, 제안자 포함)가 찬성하면 운전자 확인 없이 확정한다.
+     * 목적지 근처는 도착 후 일정, 이탈 지점을 지난 곳은 귀갓길. 예산을 넘어도 가족이 정했으니 넣고 알린다.
+     */
+    private fun applyMajority(s: EngineState, id: String): EngineState {
+        val p = s.proposal(id) ?: return s
+        if (!p.status.undecided) return s
+        if (!p.hasMajority) {
+            val allVoted = p.voters.all { it in p.votes }
+            return if (allVoted && p.status == ProposalStatus.VOTING) s.replace(p.copy(status = ProposalStatus.DRIVER_PENDING)) else s
+        }
+        val outcome = when {
+            p.place.nearDestination -> ProposalStatus.AFTER_ARRIVAL
+            s.isUnreachable(p.place) -> ProposalStatus.RETURN_TRIP
+            else -> ProposalStatus.ACCEPTED
+        }
+        val over = p.place.detourMin - s.budgetLeftMin
+        val text = when (outcome) {
+            ProposalStatus.ACCEPTED -> "가족 과반수 찬성 · ${p.place.name} 경로에 추가" + if (over > 0) " (여유시간 ${over}분 초과)" else ""
+            ProposalStatus.AFTER_ARRIVAL -> "가족 과반수 찬성 · ${p.place.name} 도착 후 일정"
+            else -> "가족 과반수 찬성 · ${p.place.name}은 돌아오는 길에"
+        }
+        val decided = s.replace(p.copy(status = outcome, decidedBy = DecidedBy.FAMILY_MAJORITY))
+        val closed = if (decided.suggest?.proposalId == id) decided.copy(suggest = null) else decided
+        return closed.copy(decideChoices = closed.decideChoices - id).withNotice(text, p.member)
     }
 
     /** 급한 요청: 제안권을 쓰지 않고, 앞쪽 가장 가까운 휴게소를 운전자 확인 없이 확정 */
@@ -138,12 +189,12 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
         val member = FamilyMember.byId(e.memberId) ?: return s
         if (member.isDriver) return s
         val taken = s.accepted.map { it.place.id }.toSet()
-        val rest = DemoCatalog.places
-            .filter { it.kind == PlaceKind.REST_AREA && it.routeKm >= s.progressKm - Rules.AT_STOP_KM && it.id !in taken }
+        val rest = scenario.places
+            .filter { it.kind == PlaceKind.REST_AREA && it.id !in taken && it.detour.exitIndex > s.baseIndexNow }
             .minByOrNull { it.routeKm }
         if (rest == null) {
             // 이미 앞쪽 휴게소가 확정돼 있으면 그곳을 알려 준다
-            val already = s.accepted.firstOrNull { it.place.kind == PlaceKind.REST_AREA && it.place.routeKm >= s.progressKm }
+            val already = s.accepted.firstOrNull { it.place.kind == PlaceKind.REST_AREA && !s.isPassed(it.place) }
             val text = if (already != null) "${member.displayName} ${e.type.label} 요청 · ${already.place.name}에 들러요" else "${member.displayName} ${e.type.label} 요청 · 가까운 휴게소가 없어요"
             return s.withNotice(text, member)
         }
@@ -157,44 +208,42 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
             createdAtMs = s.nowMs,
             urgent = e.type,
             presented = true,
+            decidedBy = DecidedBy.URGENT,
         )
         return s.copy(proposals = s.proposals + record, nextSeq = s.nextSeq + 1)
             .withNotice("${member.displayName} 급한 요청 · ${e.type.label} → ${rest.name.eulReul()} 추가했어요", member)
     }
 
-    /** 제안자 빼고 투표 대상의 절반 이상 찬성 → 운전자 확인 대기, 절반 넘게 반대 → 넘김 */
-    private fun evaluateVotes(p: ProposalRecord): ProposalRecord {
-        if (p.status != ProposalStatus.VOTING && p.status != ProposalStatus.PROPOSED) return p
-        val n = p.voters.size
-        val yes = p.votes.values.count { it == VoteChoice.YES }
-        val no = p.votes.values.count { it == VoteChoice.NO }
-        return when {
-            n == 0 || (yes > 0 && yes * 2 >= n) -> p.copy(status = ProposalStatus.DRIVER_PENDING)
-            no * 2 > n -> p.copy(status = ProposalStatus.SKIPPED)
-            else -> p
-        }
-    }
-
     /** 주행 중이고 오버레이가 비어 있으면 운전자 확인 대기 제안을 하나 띄운다 */
     private fun autoPresent(s: EngineState): EngineState {
         if (s.suggest != null || !s.isDriving || s.devPanelOpen || s.screen == Screen.DECIDE) return s
-        val next = s.undecided.firstOrNull { it.status == ProposalStatus.DRIVER_PENDING && !it.presented } ?: return s
-        return present(s.copy(screen = Screen.MAIN), next.id)
+        val next = s.undecided.firstOrNull {
+            (it.status == ProposalStatus.VOTING || it.status == ProposalStatus.DRIVER_PENDING) && !it.presented
+        }
+        if (next != null) return present(s.copy(screen = Screen.MAIN), next.id)
+        // 미룬 제안 장소에 가까워지면 한 번 더 묻는다(들어갈 수 있을 때, 한 번만)
+        val near = s.undecided.firstOrNull {
+            it.status == ProposalStatus.NEXT_STOP && !it.reminded && !it.place.nearDestination &&
+                !s.isUnreachable(it.place) && s.kmTo(it.place) in Rules.REMIND_UNTIL_KM..Rules.REMIND_FROM_KM
+        } ?: return s
+        return present(s.copy(screen = Screen.MAIN), near.id, reminder = true)
     }
 
-    private fun present(s: EngineState, id: String): EngineState {
+    private fun present(s: EngineState, id: String, reminder: Boolean = false): EngineState {
         val p = s.proposal(id) ?: return s
-        return s.replace(p.copy(presented = true)).copy(suggest = ActiveSuggest(id, s.nowMs))
+        val marked = if (reminder) p.copy(presented = true, reminded = true) else p.copy(presented = true)
+        return s.replace(marked).copy(suggest = ActiveSuggest(id, s.nowMs, reminder))
     }
 
     private fun resolveSuggest(s: EngineState, outcome: ProposalStatus): EngineState {
         val p = s.suggest?.let { s.proposal(it.proposalId) } ?: return s.copy(suggest = null)
-        return s.replace(p.copy(status = outcome)).copy(suggest = null)
+        val by = if (outcome.undecided || outcome == ProposalStatus.SKIPPED) null else DecidedBy.DRIVER
+        return s.replace(p.copy(status = outcome, decidedBy = by)).copy(suggest = null)
     }
 
     private fun commitDecide(s: EngineState): EngineState {
         var n = s
-        s.decideChoices.forEach { (id, outcome) -> n.proposal(id)?.let { n = n.replace(it.copy(status = outcome)) } }
+        s.decideChoices.forEach { (id, outcome) -> n.proposal(id)?.let { n = n.replace(it.copy(status = outcome, decidedBy = DecidedBy.DRIVER)) } }
         return n.copy(decideChoices = emptyMap(), screen = Screen.MAIN)
     }
 
@@ -211,8 +260,9 @@ class TripEngine(nowMs: Long, initialVehicle: VehicleState = DemoStart.vehicle(n
 
     companion object {
         /** 목적지 5km 안이면 도착 후 일정, 예산을 넘으면 귀갓길, 아니면 경유 추가 */
-        fun recommendedOutcome(p: ProposalRecord, budgetLeftMin: Int): ProposalStatus = when {
+        fun recommendedOutcome(p: ProposalRecord, budgetLeftMin: Int, unreachable: Boolean = false): ProposalStatus = when {
             p.place.nearDestination -> ProposalStatus.AFTER_ARRIVAL
+            unreachable -> ProposalStatus.RETURN_TRIP
             p.place.detourMin > budgetLeftMin -> ProposalStatus.RETURN_TRIP
             else -> ProposalStatus.ACCEPTED
         }
@@ -225,40 +275,35 @@ private fun EngineState.withNotice(text: String, member: FamilyMember?) =
     copy(notice = Notice(text, member, nowMs + Rules.NOTICE_MS))
 
 /**
- * 시작 상태. 시안 Main 화면의 순간을 재현한다:
- * 엄마 두물머리 카페(자동 확정), 민준 화장실 → 홍천 휴게소(급한 요청), 서연 횡성 한우 식당(투표 중).
- * Phase 3에서 ScriptedFamilySource가 주행 거리에 맞춰 이 이벤트들을 보내는 방식으로 바뀐다.
+ * 시작 상태: 출발 전에 가족이 합의한 경유지(시나리오 initialAccepted, 엄마 두물머리 카페)는 확정으로 시작한다.
+ * 나머지 가족 이벤트는 ScriptedFamilySource가 주행 거리에 맞춰 보낸다.
  */
 object DemoStart {
-    /** 두물머리 카페 23분 전 지점 */
-    const val START_PROGRESS_M = 20_700.0
-
-    fun vehicle(nowMs: Long) = VehicleState(
-        lat = 37.586, lon = 127.212, headingDeg = 60.0,
-        speedKph = 80.0, gear = Gear.D, routeProgressM = START_PROGRESS_M, timestampMs = nowMs,
-    )
-
-    fun state(nowMs: Long, vehicle: VehicleState): EngineState {
-        val cafe = DemoCatalog.place("cafe_dumulmeori")!!
-        val rest = DemoCatalog.place("rest_hongcheon")!!
-        val hanu = DemoCatalog.place("hanu_hoengseong")!!
-        val proposals = listOf(
-            ProposalRecord("p1", FamilyMember.MOM, cafe, null, ProposalStatus.ACCEPTED, emptyMap(), nowMs, presented = true),
-            ProposalRecord("p2", FamilyMember.MINJUN, rest, null, ProposalStatus.ACCEPTED, emptyMap(), nowMs, urgent = UrgentType.TOILET, presented = true),
-            ProposalRecord("p3", FamilyMember.SEOYEON, hanu, "배고파! 점심 여기서 먹자", ProposalStatus.VOTING, emptyMap(), nowMs),
-        )
+    fun state(scenario: Scenario, nowMs: Long, vehicle: VehicleState): EngineState {
+        var seq = 1
+        val proposals = scenario.initialAccepted.mapNotNull { init ->
+            val m = FamilyMember.byId(init.memberId) ?: return@mapNotNull null
+            val place = scenario.place(init.placeId) ?: return@mapNotNull null
+            ProposalRecord("p${seq++}", m, place, null, ProposalStatus.ACCEPTED, emptyMap(), nowMs, presented = true, decidedBy = DecidedBy.PLAN)
+        }
+        val ids = proposals.map { it.place.id }.toSet()
         return EngineState(
+            scenario = scenario,
+            route = ActiveRoute.build(scenario, ids),
+            routeRequest = ids,
             nowMs = nowMs,
             vehicle = vehicle,
             stillSinceMs = if (vehicle.gear == Gear.P && vehicle.speedKph == 0.0) nowMs else null,
+            parkedSinceSimMs = null,
             proposals = proposals,
-            tokens = mapOf(FamilyMember.MOM to 1, FamilyMember.SEOYEON to 1, FamilyMember.MINJUN to Rules.TOKENS_PER_MEMBER),
             screen = Screen.MAIN,
             suggest = null,
             decideChoices = emptyMap(),
             notice = null,
             devPanelOpen = false,
-            nextSeq = 4,
+            nextSeq = seq,
+            visits = emptyMap(),
+            lastProposalId = null,
         )
     }
 }

@@ -109,7 +109,7 @@ private fun ProposalsButton(count: Int, onClick: () -> Unit) {
                     Modifier
                         .defaultMinSize(minWidth = 28.dp)
                         .height(28.dp)
-                        .background(Color.White, CircleShape)
+                        .background(FrColors.BadgeBg, CircleShape)
                         .padding(horizontal = 8.dp),
                     contentAlignment = Alignment.Center,
                 ) {

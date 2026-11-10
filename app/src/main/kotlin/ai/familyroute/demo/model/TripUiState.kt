@@ -30,7 +30,7 @@ data class TripUiState(
     val dev: DevUi?,
 )
 
-enum class TurnDirection { LEFT, RIGHT }
+enum class TurnDirection { LEFT, RIGHT, STRAIGHT }
 
 data class TurnGuide(val distanceM: Int, val direction: TurnDirection, val text: String)
 
@@ -99,6 +99,8 @@ data class DecideSummaryUi(
     val budget: BudgetUi,
     val budgetText: String,
     val order: List<String>,
+    /** 가족 폰 연결 안내(연결된 폰이 없으면 연결 방법) */
+    val phoneNote: String,
 )
 
 data class TimelineUi(
@@ -122,11 +124,17 @@ data class TimelineNodeUi(
 
 data class MemberTimeRowUi(val member: FamilyMember, val minutes: Int, val fraction: Float)
 
-data class TokenRowUi(val member: FamilyMember, val left: Int, val total: Int, val text: String)
+/** 가족 제안 기록 한 줄(제안 횟수 제한은 없다) */
+data class TokenRowUi(val member: FamilyMember, val proposed: Int, val added: Int, val text: String)
 
 /** 개발자 패널. 데모 녹화 때는 열지 않는다. */
 data class DevUi(
     val gear: Gear,
+    val multiplier: Int,
+    val paused: Boolean,
+    val hold: Boolean,
+    val phoneUrl: String,
+    val phoneConnected: Int,
     val lines: List<String>,
     val proposalOptions: List<DevOption>,
     val voteTargetLabel: String?,

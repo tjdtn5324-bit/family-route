@@ -111,7 +111,7 @@ private fun Track(t: TimelineUi, compact: Boolean) {
         }
         BasicText(
             "지금",
-            style = frText(13, FontWeight.Bold).copy(textAlign = TextAlign.Center),
+            style = frText(13, FontWeight.Bold, FrColors.OnAccent).copy(textAlign = TextAlign.Center),
             modifier = Modifier
                 .offset(x = nowX - 22.dp, y = trackY - 70.dp)
                 .width(44.dp)
@@ -180,22 +180,16 @@ private fun TokenCard(t: TimelineUi, modifier: Modifier) {
         modifier.background(FrColors.Panel, RoundedCornerShape(18.dp)).padding(horizontal = 24.dp, vertical = 20.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        BasicText("남은 제안권", style = frText(18, FontWeight.Bold))
+        BasicText("가족 제안 기록", style = frText(18, FontWeight.Bold))
         t.tokenRows.forEach { row ->
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 BasicText(row.member.displayName, style = frText(17), modifier = Modifier.width(52.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    repeat(row.total) { i ->
-                        val m = Modifier.size(18.dp)
-                        if (i < row.left) {
-                            Box(m.background(row.member.color, CircleShape))
-                        } else {
-                            Box(m.border(2.dp, FrColors.Outline, CircleShape))
-                        }
-                    }
-                }
+                Box(
+                    Modifier.size(18.dp).background(if (row.added > 0) row.member.color else FrColors.Line, CircleShape),
+                )
                 BasicText(row.text, style = frText(17, color = FrColors.TextSub))
             }
         }
+        BasicText("제안 횟수 제한 없음 · 아빠가 수락하거나 가족 과반수가 찬성하면 경로에 반영", style = frText(14, color = FrColors.TextSub))
     }
 }

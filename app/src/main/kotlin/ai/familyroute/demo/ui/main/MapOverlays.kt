@@ -27,6 +27,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -75,8 +76,13 @@ fun TurnCard(turn: TurnGuide, modifier: Modifier = Modifier) {
             contentAlignment = Alignment.Center,
         ) {
             Image(
-                painterResource(R.drawable.ic_turn_right),
-                contentDescription = if (turn.direction == TurnDirection.RIGHT) "우회전" else "좌회전",
+                painterResource(if (turn.direction == TurnDirection.STRAIGHT) R.drawable.ic_straight else R.drawable.ic_turn_right),
+                contentDescription = when (turn.direction) {
+                    TurnDirection.RIGHT -> "우회전"
+                    TurnDirection.LEFT -> "좌회전"
+                    TurnDirection.STRAIGHT -> "직진"
+                },
+                colorFilter = ColorFilter.tint(FrColors.OnAccent),
                 modifier = Modifier
                     .size(40.dp)
                     .scale(scaleX = if (turn.direction == TurnDirection.LEFT) -1f else 1f, scaleY = 1f),
@@ -115,6 +121,6 @@ private fun ConnectedPill(count: Int, modifier: Modifier = Modifier) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         Box(Modifier.size(10.dp).background(FrColors.Ok, CircleShape))
-        BasicText("가족 ${count}명 연결됨", style = frText(16, color = FrColors.TextSoft))
+        BasicText("시연 가족 ${count}명", style = frText(16, color = FrColors.TextSoft))
     }
 }

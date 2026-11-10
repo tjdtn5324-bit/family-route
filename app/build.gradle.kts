@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "ai.familyroute.demo"
     compileSdk = 34
+    useLibrary("android.car")
 
     defaultConfig {
         applicationId = "ai.familyroute.demo"
@@ -15,6 +16,12 @@ android {
         targetSdk = 34
         versionCode = 1
         versionName = "0.1-phase1"
+        val roomUrl = providers.gradleProperty("familyServerUrl").orElse("http://10.0.2.2:8789").get()
+        require(roomUrl == "http://10.0.2.2:8789" || roomUrl.startsWith("https://")) { "familyServerUrl must use HTTPS" }
+        buildConfigField("String", "FAMILY_SERVER_URL", "\"${roomUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+        val roomSecret = providers.environmentVariable("FAMILY_ROOM_CREATE_SECRET").orElse("").get()
+        require(roomSecret.matches(Regex("[A-Za-z0-9_-]*"))) { "Invalid room create secret" }
+        buildConfigField("String", "FAMILY_ROOM_CREATE_SECRET", "\"$roomSecret\"")
     }
 
     buildTypes {
@@ -25,6 +32,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -49,6 +57,12 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation("com.google.zxing:core:3.5.3")
 
     testImplementation("junit:junit:4.13.2")
+}
+
+// 단위 테스트가 assets/scenario.json을 직접 읽으므로 바뀌면 다시 돌린다
+tasks.withType<Test>().configureEach {
+    inputs.file("src/main/assets/scenario.json")
 }

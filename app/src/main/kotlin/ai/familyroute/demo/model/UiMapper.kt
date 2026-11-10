@@ -1,6 +1,6 @@
 package ai.familyroute.demo.model
 
-import ai.familyroute.demo.domain.DemoCatalog
+import ai.familyroute.demo.data.SimControl
 import ai.familyroute.demo.domain.EngineState
 import ai.familyroute.demo.domain.Place
 import ai.familyroute.demo.domain.ProposalRecord
@@ -8,43 +8,75 @@ import ai.familyroute.demo.domain.ProposalStatus
 import ai.familyroute.demo.domain.Rules
 import ai.familyroute.demo.domain.Screen
 import ai.familyroute.demo.domain.TripEngine
-import ai.familyroute.demo.domain.TripPlan
+import ai.familyroute.demo.domain.TripMath
 import ai.familyroute.demo.domain.VoteChoice
 import ai.familyroute.demo.map.MapMarker
+import ai.familyroute.demo.map.MapPreview
 import ai.familyroute.demo.map.MapUiState
+import ai.familyroute.demo.route.Geo
 import kotlin.math.ceil
 import kotlin.math.roundToInt
 
 /** 엔진 상태 → 화면 상태. 순수 함수라 단위 테스트할 수 있다. */
+/** 엔진 밖의 정보: 시뮬레이터 조작 상태, 가족 폰 연결 */
+data class UiExtras(
+    val sim: SimControl = SimControl(20, paused = false, hold = false),
+    val phoneUrl: String = "",
+    val phoneConnected: Int = 0,
+    val scriptFired: Int = 0,
+    val scriptTotal: Int = 0,
+)
+
 object UiMapper {
 
-    fun map(s: EngineState): TripUiState {
+    fun map(s: EngineState, x: UiExtras = UiExtras()): TripUiState {
         val stops = mainStops(s)
         return TripUiState(
             screen = s.screen,
             driving = s.isDriving,
             parked = s.isParked,
-            // 회전 안내·도로명은 Phase 2 시뮬레이터에서 계산한다
-            turn = TurnGuide(1200, TurnDirection.RIGHT, "서울양양고속도로 방면 우측"),
+            turn = turnGuide(s),
             connectedMembers = FamilyMember.entries.size,
-            roadName = "경춘로",
+            roadName = s.route.roadAt(s.progressM),
             speedKph = s.vehicle.speedKph.roundToInt(),
-            destinationName = DemoCatalog.DESTINATION_NAME,
-            eta = TripPlan.eta(s),
-            remainingMinutes = TripPlan.remainingMinutes(s),
-            remainingMeters = (TripPlan.remainingKm(s) * 1000).roundToInt(),
+            destinationName = s.scenario.destinationName,
+            eta = TripMath.eta(s),
+            remainingMinutes = TripMath.remainingMinutes(s),
+            remainingMeters = (TripMath.remainingKm(s) * 1000).roundToInt(),
             budget = budget(s.accepted),
             stops = stops.map { it.second },
             members = FamilyMember.entries.map { memberStatus(s, it) },
             pendingProposals = s.undecided.size,
-            map = MapUiState(markers = stops.mapNotNull { (p, ui) -> markerOf(p, ui) }),
+            map = mapState(s, stops, preview = null),
             notice = s.notice?.let { NoticeUi(it.member, it.text) },
             suggest = suggest(s, stops),
-            decide = if (s.screen == Screen.DECIDE) decide(s) else null,
+            decide = if (s.screen == Screen.DECIDE) decide(s, x) else null,
             timeline = timeline(s),
-            dev = if (s.devPanelOpen) dev(s) else null,
+            dev = if (s.devPanelOpen) dev(s, x) else null,
         )
     }
+
+    private fun turnGuide(s: EngineState): TurnGuide {
+        val next = s.route.turns.firstOrNull { it.distM > s.progressM }
+        if (next == null || next.distM - s.progressM > 30_000) {
+            val left = (s.route.length - s.progressM).roundToInt()
+            return TurnGuide(left, TurnDirection.STRAIGHT, "${s.scenario.destinationName} 도착")
+        }
+        return TurnGuide(
+            (next.distM - s.progressM).roundToInt(),
+            if (next.right) TurnDirection.RIGHT else TurnDirection.LEFT,
+            next.text,
+        )
+    }
+
+    private fun mapState(s: EngineState, stops: List<Pair<ProposalRecord, StopUi>>, preview: MapPreview?) = MapUiState(
+        route = s.route,
+        progressM = s.progressM,
+        speedMps = s.vehicle.speedKph / 3.6,
+        markers = stops.mapNotNull { (p, ui) -> markerOf(p, ui) },
+        destination = s.route.points.last().pt,
+        preview = preview,
+    )
 
     // ---------- 메인 ----------
 
@@ -56,7 +88,7 @@ object UiMapper {
         )
     }
 
-    private fun isPassed(s: EngineState, p: Place) = p.routeKm < s.progressKm - Rules.AT_STOP_KM
+    private fun isPassed(s: EngineState, p: Place) = s.isPassed(p)
 
     /** 들를 곳 목록: 앞으로 들를 확정 경유지 → 대기 제안 → 도착 후·귀갓길 */
     private fun mainStops(s: EngineState): List<Pair<ProposalRecord, StopUi>> {
@@ -65,8 +97,13 @@ object UiMapper {
                 "${p.member.displayName} 요청 · ${p.urgent.label} · +${p.place.detourMin}분"
             } else {
                 val atStop = s.currentStop?.id == p.id
-                val minutes = TripPlan.minutesBetween(TripPlan.now(s), TripPlan.arrivalAt(s, p.place)).coerceAtLeast(0)
-                val whenText = if (atStop) "지금" else "${minutes}분 후"
+                val stop = s.stopOf(p.place.id)
+                val minutes = stop?.let { TripMath.minutesBetween(TripMath.now(s), TripMath.arrivalAt(s, it)).coerceAtLeast(0) }
+                val whenText = when {
+                    atStop -> "지금"
+                    minutes == null -> "경로 준비 중"
+                    else -> "${minutes}분 후"
+                }
                 "${p.member.displayName} 제안 · $whenText · +${p.place.detourMin}분"
             }
             p to StopUi(p.member, p.place.name, detail, StopStatus.CONFIRMED)
@@ -92,8 +129,8 @@ object UiMapper {
     }
 
     private fun markerOf(p: ProposalRecord, ui: StopUi): MapMarker? = when (ui.status) {
-        StopStatus.CONFIRMED -> MapMarker(p.member, confirmed = true)
-        StopStatus.PENDING -> MapMarker(p.member, confirmed = false)
+        StopStatus.CONFIRMED -> MapMarker(p.member, confirmed = true, pt = p.place.pt)
+        StopStatus.PENDING -> MapMarker(p.member, confirmed = false, pt = p.place.pt)
         else -> null
     }
 
@@ -125,14 +162,14 @@ object UiMapper {
     private fun suggest(s: EngineState, stops: List<Pair<ProposalRecord, StopUi>>): SuggestUi? {
         val active = s.suggest ?: return null
         val p = s.proposal(active.proposalId) ?: return null
-        val outcome = TripEngine.recommendedOutcome(p, s.budgetLeftMin)
+        val outcome = TripEngine.recommendedOutcome(p, s.budgetLeftMin, s.isUnreachable(p.place))
         val elapsed = (s.nowMs - active.shownAtMs).coerceAtLeast(0)
         val leftMs = (Rules.SUGGEST_TIMEOUT_MS - elapsed).coerceAtLeast(0)
-        val eta = TripPlan.eta(s)
+        val eta = TripMath.eta(s)
         val tiles = listOf(
             TileUi("+${p.place.detourMin}분", "우회 시간"),
             if (outcome == ProposalStatus.ACCEPTED) {
-                TileUi(formatClock(TripPlan.eta(s, listOf(p.place))), "새 도착 · ${p.place.dwellMin}분 머묾 포함")
+                TileUi(formatClock(TripMath.eta(s, listOf(p.place))), "새 도착 · ${p.place.dwellMin}분 머묾 포함")
             } else {
                 TileUi(formatClock(eta), "도착 시각 그대로")
             },
@@ -146,8 +183,13 @@ object UiMapper {
         return SuggestUi(
             proposalId = p.id,
             member = p.member,
-            title = "${p.member.subject} 들를 곳을 제안했어요",
-            votesLine = (p.voters.map { "${it.displayName} ${voteLabel(p.votes[it])}" } + agoText(s.nowMs - p.createdAtMs)).joinToString(" · "),
+            title = if (active.reminder) "곧 ${p.place.name} 근처를 지나요" else "${p.member.subject} 들를 곳을 제안했어요",
+            votesLine = if (active.reminder) {
+                "${p.member.displayName} 제안 · 한 번 더 물어볼게요 · ${"%.1f".format(s.kmTo(p.place))}km 앞"
+            } else {
+                val need = FamilyMember.entries.size / 2 + 1 - p.yesCount
+                (p.voters.map { "${it.displayName} ${voteLabel(p.votes[it])}" } + "과반수까지 ${need}표" + agoText(s.nowMs - p.createdAtMs)).joinToString(" · ")
+            },
             placeName = p.place.name,
             placeInfo = p.place.category + off,
             tiles = tiles,
@@ -155,9 +197,10 @@ object UiMapper {
             primaryLabel = actionLabel(outcome, done = false, driving = true),
             secondsLeft = ceil(leftMs / 1000.0).toInt(),
             fractionLeft = leftMs.toFloat() / Rules.SUGGEST_TIMEOUT_MS,
-            map = MapUiState(
-                markers = stops.filter { it.first.id != p.id }.mapNotNull { (r, ui) -> markerOf(r, ui) },
-                preview = p.member,
+            map = mapState(
+                s,
+                stops.filter { it.first.id != p.id },
+                preview = MapPreview(p.member, p.place.detour.via, p.place.pt),
             ),
         )
     }
@@ -184,7 +227,7 @@ object UiMapper {
 
     private const val MAX_CARDS = 3
 
-    private fun decide(s: EngineState): DecideUi {
+    private fun decide(s: EngineState, x: UiExtras): DecideUi {
         val waiting = s.undecided
         val chosenAccepts = s.decideChoices.filterValues { it == ProposalStatus.ACCEPTED }.keys
             .mapNotNull { s.proposal(it) }
@@ -192,9 +235,11 @@ object UiMapper {
             val chosen = s.decideChoices[p.id]
             val othersDetour = chosenAccepts.filter { it.id != p.id }.sumOf { it.place.detourMin }
             val left = s.budgetLeftMin - othersDetour
-            val outcome = chosen ?: TripEngine.recommendedOutcome(p, left)
+            val unreachable = s.isUnreachable(p.place)
+            val outcome = chosen ?: TripEngine.recommendedOutcome(p, left, unreachable)
             val banner = when {
                 p.place.nearDestination -> BannerUi("목적지 근처라 도착 후 일정으로 넣을 수 있어요", warn = false)
+                unreachable -> BannerUi("이미 지나온 곳이라 돌아오는 길에 들러요", warn = true)
                 p.place.detourMin > left -> BannerUi("여유시간 ${Rules.BUDGET_MIN}분을 넘겨요 · 돌아오는 길 추천", warn = true)
                 else -> null
             }
@@ -204,7 +249,7 @@ object UiMapper {
                 placeName = p.place.name,
                 info = p.place.category,
                 detourText = "+${p.place.detourMin}분",
-                arrivalText = if (p.place.nearDestination) "변화 없음" else formatClock(TripPlan.eta(s, listOf(p.place))),
+                arrivalText = if (p.place.nearDestination) "변화 없음" else formatClock(TripMath.eta(s, listOf(p.place))),
                 votes = p.voters.map { v ->
                     val vote = p.votes[v]
                     VoteChipUi(v, "${v.initial} ${voteLabel(vote)}", agreed = vote == VoteChoice.YES)
@@ -215,8 +260,8 @@ object UiMapper {
             )
         }
 
-        val eta = TripPlan.eta(s)
-        val newEta = TripPlan.eta(s, chosenAccepts.map { it.place })
+        val eta = TripMath.eta(s)
+        val newEta = TripMath.eta(s, chosenAccepts.map { it.place })
         val plannedAccepted = (s.accepted + chosenAccepts.map { it.copy(status = ProposalStatus.ACCEPTED) })
         val budget = budget(plannedAccepted)
         val current = s.currentStop
@@ -224,9 +269,9 @@ object UiMapper {
             current?.let { add("${it.place.name} (지금)") }
             plannedAccepted
                 .filter { it.id != current?.id && !isPassed(s, it.place) }
-                .sortedBy { it.place.routeKm }
+                .sortedBy { s.stopOf(it.place.id)?.distM ?: (it.place.routeKm * 1000) }
                 .forEach { add("${it.place.name} · ${it.place.dwellMin}분 머묾") }
-            add("${DemoCatalog.DESTINATION_NAME} 도착")
+            add("${s.scenario.destinationName} 도착")
             val afterIds = s.decideChoices.filterValues { it == ProposalStatus.AFTER_ARRIVAL }.keys
             (s.proposals.filter { it.status == ProposalStatus.AFTER_ARRIVAL } + afterIds.mapNotNull { s.proposal(it) })
                 .forEach { add("${it.place.name} · 도착 후") }
@@ -239,10 +284,11 @@ object UiMapper {
             summary = DecideSummaryUi(
                 newEta = newEta,
                 originalEta = eta,
-                deltaMinutes = TripPlan.minutesBetween(eta, newEta),
+                deltaMinutes = TripMath.minutesBetween(eta, newEta),
                 budget = budget,
                 budgetText = "여유시간 ${Rules.BUDGET_MIN}분 중 ${budget.usedMinutes}분 사용 · ${(Rules.BUDGET_MIN - budget.usedMinutes).coerceAtLeast(0)}분 남음",
                 order = order,
+                phoneNote = if (x.phoneConnected > 0) "결정 결과는 가족 폰 ${x.phoneConnected}대에 바로 알려져요" else "가족 폰을 연결하면 결정 결과가 바로 알려져요",
             ),
         )
     }
@@ -250,37 +296,36 @@ object UiMapper {
     // ---------- 타임라인 ----------
 
     private fun timeline(s: EngineState): TimelineUi {
-        val eta = TripPlan.eta(s)
-        val stops = s.accepted
+        val eta = TripMath.eta(s)
+        val stops = s.accepted.filter { s.stopOf(it.place.id) != null }
         val nodes = buildList {
-            add(TimelineNodeUi(TimelineNodeKind.START, null, DemoCatalog.ORIGIN_NAME, formatClock(TripPlan.START)))
+            add(TimelineNodeUi(TimelineNodeKind.START, null, s.scenario.originName, formatClock(s.scenario.start)))
             stops.forEach { p ->
+                val stop = s.stopOf(p.place.id)!!
+                val passed = isPassed(s, p.place)
                 val label = when {
-                    isPassed(s, p.place) -> "다녀옴"
+                    passed -> "다녀옴"
+                    s.currentStop?.id == p.id -> "지금"
                     p.urgent != null -> p.urgent.label
                     else -> p.place.purpose
                 }
-                add(
-                    TimelineNodeUi(
-                        TimelineNodeKind.STOP, p.member, p.place.name,
-                        "${formatClock(TripPlan.arrivalAt(s, p.place))} · ${p.place.dwellMin}분 · $label",
-                    ),
-                )
+                val at = s.visits[p.place.id]?.let { TripMath.clock(it) } ?: TripMath.arrivalAt(s, stop)
+                add(TimelineNodeUi(TimelineNodeKind.STOP, p.member, p.place.name, "${formatClock(at)} · ${p.place.dwellMin}분 · $label"))
             }
-            add(TimelineNodeUi(TimelineNodeKind.END, null, DemoCatalog.DESTINATION_NAME, formatClock(eta)))
+            add(TimelineNodeUi(TimelineNodeKind.END, null, s.scenario.destinationName, formatClock(eta)))
         }
-        val kms = listOf(0.0) + stops.map { it.place.routeKm } + DemoCatalog.TOTAL_KM
-        val segments = kms.size - 1
-        val progress = s.progressKm.coerceIn(0.0, DemoCatalog.TOTAL_KM)
-        val i = (0 until segments).firstOrNull { progress <= kms[it + 1] } ?: (segments - 1)
-        val span = (kms[i + 1] - kms[i]).takeIf { it > 0 } ?: 1.0
-        val nowFraction = ((i + (progress - kms[i]) / span) / segments).toFloat().coerceIn(0f, 1f)
+        val ds = listOf(0.0) + stops.map { s.stopOf(it.place.id)!!.distM } + s.route.length
+        val segments = ds.size - 1
+        val progress = s.progressM.coerceIn(0.0, s.route.length)
+        val i = (0 until segments).firstOrNull { progress <= ds[it + 1] } ?: (segments - 1)
+        val span = (ds[i + 1] - ds[i]).takeIf { it > 0 } ?: 1.0
+        val nowFraction = ((i + (progress - ds[i]) / span) / segments).toFloat().coerceIn(0f, 1f)
 
-        val usage = budget(stops)
+        val usage = budget(s.accepted)
         val used = usage.usage.associate { it.member to it.minutes }
         val rowOrder = usage.usage.map { it.member } + FamilyMember.passengers.filter { it !in used }
         return TimelineUi(
-            subtitle = "${DemoCatalog.ORIGIN_SHORT} → ${DemoCatalog.DESTINATION_SHORT} · 도착 ${formatClock(eta)}",
+            subtitle = "${s.scenario.originShort} → ${s.scenario.destinationShort} · 도착 ${formatClock(eta)}",
             nodes = nodes,
             nowFraction = nowFraction,
             timeRows = rowOrder.map { m ->
@@ -288,15 +333,15 @@ object UiMapper {
                 MemberTimeRowUi(m, min, (min.toFloat() / Rules.BUDGET_MIN).coerceIn(0f, 1f))
             },
             budgetText = "여유시간 ${Rules.BUDGET_MIN}분 중 ${usage.remainingMinutes}분 남음",
-            tokenRows = listOf(FamilyMember.MOM, FamilyMember.MINJUN, FamilyMember.SEOYEON).map { m ->
-                val left = s.tokens[m] ?: 0
-                val urgentNote = if (s.proposals.any { it.member == m && it.urgent != null }) " · 급한 요청은 따로 셈" else ""
-                val text = when (left) {
-                    0 -> "모두 사용"
-                    Rules.TOKENS_PER_MEMBER -> "${left}회"
-                    else -> "${left}회 남음"
-                } + urgentNote
-                TokenRowUi(m, left, Rules.TOKENS_PER_MEMBER, text)
+            tokenRows = FamilyMember.passengers.map { m ->
+                val mine = s.proposals.filter { it.member == m && it.urgent == null && it.decidedBy != ai.familyroute.demo.domain.DecidedBy.PLAN }
+                val added = mine.count { it.status == ProposalStatus.ACCEPTED }
+                val urgent = s.proposals.count { it.member == m && it.urgent != null }
+                val text = buildString {
+                    append("제안 ${mine.size}번 · 경로 반영 ${added}번")
+                    if (urgent > 0) append(" · 급한 요청 ${urgent}번")
+                }
+                TokenRowUi(m, mine.size, added, text)
             },
         )
     }
@@ -310,13 +355,13 @@ object UiMapper {
         DevOption(FamilyMember.SEOYEON, "cafe_dumulmeori", "두물머리 카페", null),
     )
 
-    private fun dev(s: EngineState): DevUi {
+    private fun dev(s: EngineState, x: UiExtras): DevUi {
         val target = s.undecided.lastOrNull()
         val lines = buildList {
-            add("기어 ${s.vehicle.gear} · ${s.vehicle.speedKph.roundToInt()}km/h · ${if (s.isParked) "정차 확인됨" else if (s.isDriving) "주행 중" else "정차 확인 중(3초)"}")
-            add("위치 ${"%.1f".format(s.progressKm)}km / ${DemoCatalog.TOTAL_KM.roundToInt()}km · 시계 ${formatClock(TripPlan.now(s))} · 도착 ${formatClock(TripPlan.eta(s))}")
+            add("기어 ${s.vehicle.gear} · ${s.vehicle.speedKph.roundToInt()}km/h · ${if (s.isParked) "정차 확인됨" else if (s.isDriving) "주행 중" else "정차 확인 중(3초)"} · ${s.route.roadAt(s.progressM)}")
+            add("위치 ${"%.1f".format(s.progressM / 1000)} / ${"%.1f".format(s.route.length / 1000)}km · 시계 ${formatClock(TripMath.now(s))} · 도착 ${formatClock(TripMath.eta(s))} · 대본 ${x.scriptFired}/${x.scriptTotal}")
             add("화면 ${s.screen} · 오버레이 ${s.suggest?.proposalId ?: "없음"}")
-            add("예산 ${s.budgetUsedMin}/${Rules.BUDGET_MIN}분 · 제안권 " + FamilyMember.passengers.joinToString(" · ") { "${it.displayName} ${s.tokens[it] ?: 0}" })
+            add("예산 ${s.budgetUsedMin}/${Rules.BUDGET_MIN}분 · 과반수 기준 ${FamilyMember.entries.size / 2 + 1}명 찬성")
             s.proposals.forEach { p ->
                 val votes = p.votes.entries.joinToString(" ") { "${it.key.initial}:${voteLabel(it.value)}" }
                 add("${p.id} ${p.member.displayName} ${p.place.name} — ${p.status}${if (p.urgent != null) " (급한 요청)" else ""} $votes")
@@ -324,6 +369,11 @@ object UiMapper {
         }
         return DevUi(
             gear = s.vehicle.gear,
+            multiplier = x.sim.multiplier,
+            paused = x.sim.paused,
+            hold = x.sim.hold,
+            phoneUrl = x.phoneUrl,
+            phoneConnected = x.phoneConnected,
             lines = lines,
             proposalOptions = devOptions,
             voteTargetLabel = target?.let { "${it.id} ${it.member.displayName} · ${it.place.name}" },

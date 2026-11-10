@@ -39,6 +39,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -145,10 +146,10 @@ private fun Card(c: DecideCardUi, compact: Boolean, onToggle: () -> Unit, focus:
         c.banner?.let {
             BasicText(
                 it.text,
-                style = frText(15, color = if (it.warn) Color(0xFFFFCF94) else Color(0xFFBFD8FF)),
+                style = frText(15, color = if (it.warn) FrColors.WarnBannerText else FrColors.InfoBannerText),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(if (it.warn) Color(0xFF3A2A14) else Color(0xFF13283F), RoundedCornerShape(10.dp))
+                    .background(if (it.warn) FrColors.WarnBannerBg else FrColors.InfoBannerBg, RoundedCornerShape(10.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
             )
         }
@@ -163,7 +164,14 @@ private fun Card(c: DecideCardUi, compact: Boolean, onToggle: () -> Unit, focus:
             radius = 14.dp,
             focusRequester = focus,
             trailing = if (c.selected) {
-                { Image(painterResource(R.drawable.ic_check), contentDescription = "선택됨", modifier = Modifier.size(22.dp)) }
+                {
+                    Image(
+                        painterResource(R.drawable.ic_check),
+                        contentDescription = "선택됨",
+                        colorFilter = ColorFilter.tint(FrColors.OnAccent),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             } else {
                 null
             },
@@ -203,5 +211,10 @@ private fun Summary(d: DecideUi, compact: Boolean, onAction: (UiAction) -> Unit,
         }
         Spacer(Modifier.weight(1f))
         FrButton("이대로 출발", { onAction(UiAction.DecideDepart) }, Modifier.fillMaxWidth(), ButtonStyle.PRIMARY, height = 70.dp, fontSize = 22)
+        BasicText(
+            s.phoneNote,
+            style = frText(14, color = FrColors.TextSub).copy(textAlign = androidx.compose.ui.text.style.TextAlign.Center),
+            modifier = Modifier.fillMaxWidth(),
+        )
     }
 }

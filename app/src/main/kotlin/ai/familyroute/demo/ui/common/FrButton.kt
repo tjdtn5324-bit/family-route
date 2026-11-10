@@ -44,7 +44,7 @@ fun FrButton(
 ) {
     val shape = RoundedCornerShape(radius)
     val textColor = when (style) {
-        ButtonStyle.PRIMARY -> Color.White
+        ButtonStyle.PRIMARY -> FrColors.OnAccent
         ButtonStyle.SECONDARY -> FrColors.Text
         ButtonStyle.OUTLINE -> FrColors.TextSoft
     }
