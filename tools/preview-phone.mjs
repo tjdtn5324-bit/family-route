@@ -10,9 +10,13 @@ const places = [
   { name: '감천문화마을', latitude: 35.0974, longitude: 129.0106, address: '부산 사하구 감천동 1-17' },
   { name: '해운대해수욕장', latitude: 35.1587, longitude: 129.1604, address: '부산 해운대구 우동' }
 ];
+// 화면 확인용 예시 후기. 실제 사용자가 쓴 글이 아니며 이 미리보기 서버에만 있다.
+const rooms = new Rooms({ sampleCourses: true });
+rooms.reviewCourse('preview-1', 'guide-busan-market', { rating: 5, text: '(미리보기 예시) 시장 구경이 즐거웠어요.', name: '예시 가족 1' });
+rooms.reviewCourse('preview-2', 'guide-busan-market', { rating: 4, text: '(미리보기 예시) 골목이 가팔라서 편한 신발이 좋아요.', name: '예시 가족 2' });
 createApp({
   apiKey: 'preview',
-  rooms: new Rooms({ sampleCourses: true }),
+  rooms,
   search: async q => places.filter(p => !q || p.name.includes(q) || p.address.includes(q) || q.includes('부산') || /busan/i.test(q)),
   directions: async c => ({ points: [[37.55, 126.97], [35.1152, 129.0415]], distance: 400000, duration: 16000 })
 }).listen(port, '127.0.0.1', () => console.log('미리보기: http://127.0.0.1:' + port));

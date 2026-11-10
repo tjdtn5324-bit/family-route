@@ -13,6 +13,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -81,6 +82,9 @@ class MainActivity : ComponentActivity() {
             var selected by remember { mutableStateOf<SearchPlace?>(null) }
             var courses by remember { mutableStateOf<List<SharedCourse>>(emptyList()) }
             var coursesStatus by remember { mutableStateOf("") }
+            var courseView by remember { mutableIntStateOf(0) }
+            var regions by remember { mutableStateOf(TrendingRegions(false, emptyList())) }
+            var shownReviews by remember { mutableStateOf<Map<String, List<CourseReview>>>(emptyMap()) }
             var nearby by remember { mutableStateOf<List<SharedCourse>>(emptyList()) }
             var showPreferences by remember { mutableStateOf(false) }
             var companions by remember { mutableStateOf<Set<String>>(emptySet()) }
@@ -110,13 +114,18 @@ class MainActivity : ComponentActivity() {
             fun loadCourses(q: String) {
                 coursesStatus = "추천 여행을 불러오는 중이에요."
                 scope.launch {
-                    try { courses = client.publicCourses(q); coursesStatus = if (courses.isEmpty()) "아직 이 지역에 공유된 여행이 없어요." else "" }
+                    try { courses = client.publicCourses(q, COURSE_VIEWS[courseView].second); coursesStatus = if (courses.isEmpty()) "아직 이 지역에 공유된 여행이 없어요." else "" }
                     catch (_: Exception) { courses = emptyList(); coursesStatus = "추천 여행을 불러오지 못했어요. 다시 눌러 주세요." }
                 }
             }
             fun openFind(showCourses: Boolean) {
                 open(Screen.FIND); findCourses = showCourses; selected = null; results = emptyList()
-                if (showCourses) loadCourses("")
+                if (showCourses) { loadCourses(""); scope.launch { regions = try { client.trendingRegions() } catch (_: Exception) { TrendingRegions(false, emptyList()) } } }
+            }
+            /** 후기를 펼치거나 접는다. 차에서는 읽기만 하고, 쓰기는 휴대폰에서 한다. */
+            fun toggleReviews(course: SharedCourse) {
+                if (course.id in shownReviews) { shownReviews = shownReviews - course.id; return }
+                scope.launch { try { shownReviews = shownReviews + (course.id to client.reviews(course)) } catch (_: Exception) { error = "후기를 불러오지 못했어요." } }
             }
             fun search() {
                 if (query.isBlank()) return
@@ -272,9 +281,19 @@ class MainActivity : ComponentActivity() {
                                     CarButton(if (busy) "찾는 중" else "검색", enabled = !busy, icon = R.drawable.ic_nav_search) { search() }
                                 }
                                 if (findCourses) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        COURSE_VIEWS.forEachIndexed { i, (label, _) -> Choice(label, i == courseView) { courseView = i; loadCourses(query.trim()) } }
+                                    }
+                                    if (regions.names.isNotEmpty()) {
+                                        T(if (regions.active) "요즘 많이 찾는 여행지" else "지역별로 둘러보기", 19, FontWeight.Bold, CarColors.Sub)
+                                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            regions.names.forEach { name -> Choice(name, query.trim() == name) { query = name; loadCourses(name) } }
+                                            Choice("전체", query.isBlank()) { query = ""; loadCourses("") }
+                                        }
+                                    }
                                     if (coursesStatus.isNotBlank()) T(coursesStatus, 20, color = CarColors.Sub)
                                     courses.forEach { c ->
-                                        CourseCard(c) {
+                                        CourseCard(c, shownReviews[c.id], { toggleReviews(c) }) {
                                             if (route != null) T("지금 경로가 이 코스로 바뀌어요.", 17, color = CarColors.Sub)
                                             CarButton(if (busy) "길 찾는 중" else "이 코스로 길 찾기", Modifier.fillMaxWidth(), enabled = !busy && c.destination != null) { startCourse(c) }
                                         }
@@ -309,7 +328,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     if (nearby.isEmpty()) T("아직 주변에 공유된 여행이 없어요.", 20, color = CarColors.Sub)
                                     nearby.forEach { c ->
-                                        CourseCard(c) {
+                                        CourseCard(c, shownReviews[c.id], { toggleReviews(c) }) {
                                             if (c.matchReason.isNotBlank()) T("우리 가족 취향: ${c.matchReason}", 18, FontWeight.Bold, CarColors.Teal)
                                             CarButton(if (busy) "길 찾는 중" else "들르는 곳으로 더하기", Modifier.fillMaxWidth(), enabled = !busy, icon = R.drawable.ic_plus) { addCourse(c) }
                                         }
@@ -475,12 +494,31 @@ private fun stopNames(route: LiveRoute): List<String> = try {
     (0 until stops.length()).map { stops.getJSONObject(it).optString("name") }.filter { it.isNotBlank() } + route.destinationName
 } catch (_: Exception) { listOf(route.destinationName) }
 
-@Composable private fun CourseCard(course: SharedCourse, actions: @Composable ColumnScope.() -> Unit) {
+/** 추천 여행을 보는 순서. 뒤의 값은 서버에 그대로 넘기는 조건이다. */
+private val COURSE_VIEWS = listOf("요즘 인기" to "sort=trending", "좋아요순" to "sort=popular&kind=community", "지역 추천" to "kind=official&sort=trending")
+
+@Composable private fun CourseCard(course: SharedCourse, reviews: List<CourseReview>?, onReviews: () -> Unit, actions: @Composable ColumnScope.() -> Unit) {
     Card {
-        if (course.isSample) Tag("시연 예시", CarColors.Warm, CarColors.WarmInk) else Tag("가족이 공유한 코스 · 좋아요 ${course.likes}")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            when {
+                course.official -> Tag("${if (course.region.isNotBlank()) course.region + " · " else ""}관광 안내 참고")
+                course.isSample -> Tag("시연 예시", CarColors.Warm, CarColors.WarmInk)
+                else -> Tag("가족이 공유한 코스 · 좋아요 ${course.likes}")
+            }
+            if (course.trending) Tag("요즘 인기", CarColors.OkBg, CarColors.Ok)
+        }
         T(course.title, 24, FontWeight.Bold, maxLines = 2)
         if (course.description.isNotBlank()) T(course.description, 18, color = CarColors.Sub, maxLines = 2)
         StopList(course.stops.split(" → ").filter { it.isNotBlank() })
+        if (course.reviewCount > 0) {
+            CarButton("★ ${course.rating ?: 0.0} · 후기 ${course.reviewCount}개 ${if (reviews == null) "보기" else "접기"}", Modifier.fillMaxWidth(), Btn.Line, onClick = onReviews)
+            reviews?.take(3)?.forEach { r ->
+                Column(Modifier.fillMaxWidth().background(CarColors.Tint, RoundedCornerShape(14.dp)).padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    T("★ ${r.rating} · ${r.name}", 18, FontWeight.Bold)
+                    if (r.text.isNotBlank()) T(r.text, 18, color = CarColors.Ink, maxLines = 3)
+                }
+            }
+        }
         actions()
     }
 }

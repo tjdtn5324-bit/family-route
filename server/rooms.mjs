@@ -7,6 +7,19 @@ const ROOM_TTL_MS = 12 * 60 * 60 * 1000;
 const COMPANIONS = new Set(['CHILD', 'PARENTS', 'PET']);
 const STYLES = new Set(['FOOD', 'RELAX', 'ACTIVITY']);
 const defaultPreferences = () => ({ companions: [], styles: [], hours: null });
+const DAY_MS = 24 * 60 * 60 * 1000;
+const TREND_WINDOW_MS = 7 * DAY_MS, TREND_HALF_LIFE_MS = 2 * DAY_MS;
+const METROS = ['서울', '부산', '대구', '인천', '광주', '대전', '울산', '세종', '제주'];
+
+// 코스가 속한 지역 이름. 주소의 시·도(광역시는 그대로, 도는 그 아래 시·군)를 쓴다.
+export function regionOf(place) {
+  const tokens = String(place?.address || '').trim().split(/\s+/).filter(Boolean);
+  const first = tokens[0] || '';
+  const metro = METROS.find(m => first.startsWith(m));
+  if (metro) return metro;
+  const second = (tokens[1] || '').replace(/(특별자치시|시|군)$/, '');
+  return second || first || String(place?.name || '').slice(0, 10);
+}
 
 function validatedPreferences(input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('여행 취향을 확인해 주세요');
@@ -26,6 +39,8 @@ export class Rooms {
   #invites = new Map();
   #courses = new Map();
   #likes = new Map();
+  #reviews = new Map();
+  #activity = new Map();
   #pairings = new Map();
   #permanentMemories = false;
 
@@ -59,6 +74,9 @@ export class Rooms {
       sessions: structuredClone([...this.#sessions]),
       invites: structuredClone([...this.#invites]),
       courses: structuredClone([...this.#courses]),
+      likes: [...this.#likes].map(([id, users]) => [id, [...users]]),
+      reviews: [...this.#reviews].map(([id, byUser]) => [id, structuredClone([...byUser])]),
+      activity: structuredClone([...this.#activity]),
     };
   }
 
@@ -69,6 +87,10 @@ export class Rooms {
     result.#sessions = new Map(structuredClone(snapshot.sessions));
     result.#invites = new Map(structuredClone(snapshot.invites));
     result.#courses = new Map(structuredClone(snapshot.courses));
+    // 좋아요·후기·최근 활동은 나중에 추가된 항목이라 예전 저장 파일에는 없을 수 있다.
+    if (Array.isArray(snapshot.likes)) result.#likes = new Map(snapshot.likes.map(([id, users]) => [id, new Set(users)]));
+    if (Array.isArray(snapshot.reviews)) result.#reviews = new Map(snapshot.reviews.map(([id, entries]) => [id, new Map(structuredClone(entries))]));
+    if (Array.isArray(snapshot.activity)) result.#activity = new Map(structuredClone(snapshot.activity));
     result.#prune();
     return result;
   }
@@ -217,9 +239,67 @@ export class Rooms {
     return this.publicCourses(query);
   }
 
-  publicCourses(query = '') {
-    const q = clean(query, 80).toLocaleLowerCase();
-    return [...this.#courses.values()].filter(c => !q || [c.title, c.description, c.destination.name, c.destination.address || '', ...c.waypoints.flatMap(p => [p.name, p.address || ''])].some(v => v.toLocaleLowerCase().includes(q))).map(c=>({...c,likes:this.#likes.get(c.id)?.size||0})).sort((a,b)=>Number(!!a.sample)-Number(!!b.sample)||b.likes-a.likes||b.createdAt-a.createdAt);
+  // 최근 7일의 좋아요(1)·후기(2)·실제 길 안내에 쓰임(3)을 더하고, 이틀마다 절반으로 줄인다.
+  #bump(id, weight) {
+    const events = this.#activity.get(id) || [];
+    events.push({ t: Date.now(), w: weight });
+    this.#activity.set(id, events.slice(-300));
+  }
+  #trend(id, now = Date.now()) {
+    let score = 0;
+    for (const e of this.#activity.get(id) || []) if (now - e.t <= TREND_WINDOW_MS) score += e.w * 0.5 ** ((now - e.t) / TREND_HALF_LIFE_MS);
+    return Math.round(score * 100) / 100;
+  }
+  #summary(c, now = Date.now()) {
+    const reviews = [...(this.#reviews.get(c.id)?.values() || [])];
+    const rating = reviews.length ? Math.round(reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length * 10) / 10 : null;
+    return { ...c, likes: this.#likes.get(c.id)?.size || 0, reviewCount: reviews.length, rating, trendScore: this.#trend(c.id, now), region: regionOf(c.destination), official: !!c.curated };
+  }
+
+  // sort: popular(좋아요순, 기본) | trending(요즘 인기) | new(새로 올라온). kind: community(가족 공유) | official(관광 안내 참고).
+  publicCourses(query = '', { sort = 'popular', kind = '' } = {}) {
+    const q = clean(query, 80).toLocaleLowerCase(), now = Date.now();
+    const base = (a, b) => Number(!!a.sample) - Number(!!b.sample) || b.likes - a.likes || b.createdAt - a.createdAt;
+    const order = sort === 'trending' ? (a, b) => b.trendScore - a.trendScore || base(a, b) : sort === 'new' ? (a, b) => Number(!!a.sample) - Number(!!b.sample) || b.createdAt - a.createdAt : base;
+    return [...this.#courses.values()]
+      .filter(c => kind === 'official' ? !!c.curated : kind === 'community' ? !c.sample : true)
+      .filter(c => !q || [c.title, c.description, c.destination.name, c.destination.address || '', ...c.waypoints.flatMap(p => [p.name, p.address || ''])].some(v => v.toLocaleLowerCase().includes(q)))
+      .map(c => this.#summary(c, now)).sort(order);
+  }
+
+  // 요즘 앱 안에서 활동이 많은 지역과 코스. 앱 밖의 실제 관광객 수가 아니다.
+  trending() {
+    const all = this.publicCourses('', { sort: 'trending' }), regions = new Map();
+    for (const c of all) {
+      const r = regions.get(c.region) || { region: c.region, score: 0, courses: 0 };
+      r.score = Math.round((r.score + c.trendScore) * 100) / 100; r.courses++; regions.set(c.region, r);
+    }
+    return { regions: [...regions.values()].sort((a, b) => b.score - a.score || b.courses - a.courses).slice(0, 8), courses: all.filter(c => c.trendScore > 0).slice(0, 5) };
+  }
+
+  // 후기는 계정당 코스별 하나. 다시 쓰면 고쳐진다. 화면에는 이름만 보이고 계정 정보는 내보내지 않는다.
+  reviewCourse(userId, id, input) {
+    const course = this.#courses.get(id);
+    if (!course || (course.sample && !course.curated)) throw new Error('후기를 남길 수 없는 코스예요');
+    const rating = input?.rating, text = clean(input?.text, 300), name = clean(input?.name, 20) || '여행자';
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('별점을 1점부터 5점 사이로 골라 주세요');
+    let byUser = this.#reviews.get(id); if (!byUser) { byUser = new Map(); this.#reviews.set(id, byUser); }
+    const existing = byUser.get(userId);
+    if (!existing && byUser.size >= 200) throw new Error('이 코스의 후기 한도에 도달했어요');
+    byUser.set(userId, { name, rating, text, createdAt: existing?.createdAt || Date.now(), updatedAt: Date.now() });
+    if (!existing) this.#bump(id, 2);
+    return this.courseReviews(id, userId);
+  }
+  deleteReview(userId, id) {
+    this.#reviews.get(id)?.delete(userId);
+    return this.courseReviews(id, userId);
+  }
+  courseReviews(id, userId = null) {
+    const course = this.#courses.get(id);
+    if (!course) throw new Error('공유 코스를 찾을 수 없습니다');
+    const entries = [...(this.#reviews.get(id) || [])].sort((a, b) => b[1].updatedAt - a[1].updatedAt);
+    const summary = this.#summary(course);
+    return { rating: summary.rating, count: summary.reviewCount, reviews: entries.map(([user, r]) => ({ name: r.name, rating: r.rating, text: r.text, createdAt: r.createdAt, mine: userId !== null && user === userId })) };
   }
 
   setCourseLike(userId,id,liked) {
@@ -228,6 +308,7 @@ export class Rooms {
     if(typeof liked!=='boolean') throw new Error('좋아요 상태를 확인해 주세요');
     let likes=this.#likes.get(id);if(!likes){likes=new Set();this.#likes.set(id,likes)}
     if(liked && !likes.has(userId) && likes.size>=1000) throw new Error('좋아요 한도에 도달했어요');
+    if(liked && !likes.has(userId)) this.#bump(id, 1);
     if(liked)likes.add(userId);else likes.delete(userId);
     return {likes:likes.size,liked};
   }
@@ -351,7 +432,7 @@ export class Rooms {
         room.proposals.push({ id: randomUUID(), type: 'WAYPOINT', member: proposal.member, place, message: proposal.course.title, status: 'ACCEPTED', waypointOrder:this.#waypoints(room).length, votes: {}, createdAt: Date.now() });
       }
       if (!add) room.destination = proposal.course.destination;
-      const shared = this.#courses.get(proposal.course.id); if (shared) shared.uses = (shared.uses || 0) + 1;
+      const shared = this.#courses.get(proposal.course.id); if (shared) { shared.uses = (shared.uses || 0) + 1; this.#bump(shared.id, 3); }
     }
     if (proposal.type === 'WAYPOINT') proposal.waypointOrder = this.#waypoints(room).length;
     proposal.status = 'ACCEPTED'; if (proposal.type === 'DESTINATION') room.destination = proposal.place;

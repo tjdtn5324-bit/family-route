@@ -17,7 +17,10 @@ data class LiveWaypoint(val id: String, val name: String)
 data class FamilyPhoto(val id: String, val memberName: String)
 data class LiveRoomState(val proposals: List<LiveProposal>, val route: LiveRoute?, val preferences: RoomPreferences = RoomPreferences(), val waypoints: List<LiveWaypoint> = emptyList(), val itineraryVersion: Int = -1, val photos: List<FamilyPhoto> = emptyList(), val archived: Boolean = false, val roomName: String = "")
 data class SearchPlace(val name: String, val address: String, val latitude: Double, val longitude: Double)
-data class SharedCourse(val id: String, val title: String, val stops: String, val uses: Int, val matchReason: String = "", val isSample: Boolean = false, val description: String = "", val destination: SearchPlace? = null, val likes: Int = 0)
+data class SharedCourse(val id: String, val title: String, val stops: String, val uses: Int, val matchReason: String = "", val isSample: Boolean = false, val description: String = "", val destination: SearchPlace? = null, val likes: Int = 0, val rating: Double? = null, val reviewCount: Int = 0, val trending: Boolean = false, val official: Boolean = false, val region: String = "", val sourceName: String = "")
+data class CourseReview(val name: String, val rating: Int, val text: String)
+/** 요즘 활동이 많은 지역 이름. active가 false면 아직 순위를 매길 만큼 활동이 없다는 뜻이다. */
+data class TrendingRegions(val active: Boolean, val names: List<String>)
 
 /** 가족방과 앱 자체 경로 서비스를 연결한다. */
 class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_URL.trimEnd('/')) {
@@ -95,7 +98,19 @@ class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_UR
         request("/api/preferences", room.driverToken, data)
     }
 
-    suspend fun publicCourses(query: String = ""): List<SharedCourse> = parseCourses(request("/api/public/courses?q=${URLEncoder.encode(query, "UTF-8")}").getJSONArray("courses"))
+    /** view: "sort=trending", "sort=popular&kind=community", "kind=official&sort=trending" 처럼 서버의 보는 순서를 그대로 넘긴다. */
+    suspend fun publicCourses(query: String = "", view: String = ""): List<SharedCourse> = parseCourses(request("/api/public/courses?q=${URLEncoder.encode(query, "UTF-8")}${if (view.isBlank()) "" else "&$view"}").getJSONArray("courses"))
+
+    suspend fun trendingRegions(): TrendingRegions {
+        val items = request("/api/public/trending").getJSONArray("regions")
+        val regions = (0 until items.length()).map { items.getJSONObject(it) }.filter { it.optString("region").isNotBlank() }
+        return TrendingRegions(regions.any { it.optDouble("score", 0.0) > 0 }, regions.map { it.getString("region") })
+    }
+
+    suspend fun reviews(course: SharedCourse): List<CourseReview> {
+        val items = request("/api/courses/${course.id}/reviews").getJSONArray("reviews")
+        return (0 until items.length()).map { items.getJSONObject(it) }.map { CourseReview(it.optString("name", "여행자"), it.optInt("rating"), it.optString("text")) }
+    }
 
     suspend fun recommendations(room: LiveRoom, place: SearchPlace): List<SharedCourse> = parseCourses(request("/api/recommended-courses?latitude=${place.latitude}&longitude=${place.longitude}", room.driverToken).getJSONArray("courses"))
 
@@ -107,7 +122,7 @@ class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_UR
             val labels = mapOf("CHILD" to "아이와 함께", "PARENTS" to "부모님과 함께", "PET" to "반려동물과 함께", "FOOD" to "맛있는 여행", "RELAX" to "여유로운 여행", "ACTIVITY" to "즐거운 체험")
             val reasons = listOf("companions", "styles").flatMap { key -> val a = matched?.optJSONArray(key); if (a == null) emptyList() else (0 until a.length()).mapNotNull { labels[a.optString(it)] } }.toMutableList()
             if (matched != null && !matched.isNull("hours")) reasons.add("${matched.optInt("hours")}시간")
-            SharedCourse(c.getString("id"), c.getString("title"), names.joinToString(" → "), c.optInt("uses"), reasons.joinToString(" · "), c.optBoolean("sample", false), c.optString("description"), c.getJSONObject("destination").let { SearchPlace(it.getString("name"), it.optString("address"), it.getDouble("latitude"), it.getDouble("longitude")) }, c.optInt("likes"))
+            SharedCourse(c.getString("id"), c.getString("title"), names.joinToString(" → "), c.optInt("uses"), reasons.joinToString(" · "), c.optBoolean("sample", false), c.optString("description"), c.getJSONObject("destination").let { SearchPlace(it.getString("name"), it.optString("address"), it.getDouble("latitude"), it.getDouble("longitude")) }, c.optInt("likes"), if (c.isNull("rating")) null else c.optDouble("rating"), c.optInt("reviewCount"), c.optDouble("trendScore", 0.0) > 0, c.optBoolean("official", false), c.optString("region"), c.optString("sourceName"))
         }
     }
 

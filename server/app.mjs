@@ -109,7 +109,19 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
       if (req.method === 'POST' && url.pathname === '/api/preferences') return send(200, { preferences: rooms.setPreferences(auth, await body()) });
       if (req.method === 'GET' && url.pathname === '/api/places') { rooms.session(auth); return send(200, { places: await search(url.searchParams.get('q'), { apiKey }) }); }
       if (req.method === 'GET' && url.pathname === '/api/courses') return send(200, { courses: rooms.courses(auth, url.searchParams.get('q')) });
-      if (req.method === 'GET' && url.pathname === '/api/public/courses') return send(200, { courses: rooms.publicCourses(url.searchParams.get('q')) });
+      if (req.method === 'GET' && url.pathname === '/api/public/courses') return send(200, { courses: rooms.publicCourses(url.searchParams.get('q'), { sort: url.searchParams.get('sort') || 'popular', kind: url.searchParams.get('kind') || '' }) });
+      if (req.method === 'GET' && url.pathname === '/api/public/trending') return send(200, rooms.trending());
+      // 후기: 읽기는 누구나, 쓰기와 지우기는 로그인한 본인만.
+      const reviews = url.pathname.match(/^\/api\/courses\/([^/]+)\/reviews$/);
+      if (reviews && req.method === 'GET') {
+        let userId = null; if (auth && profile) { try { userId = await profile.verify(auth); } catch {} }
+        return send(200, rooms.courseReviews(reviews[1], userId));
+      }
+      if (reviews && ['POST', 'DELETE'].includes(req.method)) {
+        if (!profile) return send(503, { error: '로그인을 준비하고 있어요' });
+        let userId; try { userId = await profile.verify(auth); } catch { return send(401, { error: '로그인 후 후기를 남겨 주세요' }); }
+        return send(200, req.method === 'POST' ? rooms.reviewCourse(userId, reviews[1], await body()) : rooms.deleteReview(userId, reviews[1]));
+      }
       if (req.method === 'GET' && url.pathname === '/api/recommended-courses') return send(200, { courses: rooms.recommendedCourses(auth, Number(url.searchParams.get('latitude')), Number(url.searchParams.get('longitude'))) });
       if (req.method === 'POST' && url.pathname === '/api/courses') { const b = await body(); return send(201, rooms.publishCourse(auth, b.title, b.description, b.source)); }
       const course = url.pathname.match(/^\/api\/courses\/([^/]+)\/propose$/);
