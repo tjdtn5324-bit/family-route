@@ -1,0 +1,1 @@
+{"version":"0.0.1","configurations":[{"name":"phone-preview","runtimeExecutable":"C:/dev/tools/node-v26.13.0-win-x64/node.exe","runtimeArgs":["C:/dev/family-route-demo/tools/preview-phone.mjs"],"port":8790},{"name":"phone-login","runtimeExecutable":"C:/dev/tools/node-v26.13.0-win-x64/node.exe","runtimeArgs":["C:/dev/family-route-demo/tools/preview-login.mjs"],"port":8800}]}
