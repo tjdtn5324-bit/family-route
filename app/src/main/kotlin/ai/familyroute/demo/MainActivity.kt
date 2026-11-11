@@ -458,7 +458,9 @@ class MainActivity : ComponentActivity() {
                                             }
                                             T("가족 초대", 22, FontWeight.Bold)
                                             if (useCode) {
-                                                if (joinCode.isNotEmpty()) { InviteQr(joinCode, 200); T(joinCode.chunked(5).joinToString(" "), 22, FontWeight.Bold) }
+                                                // 코드만 담은 QR은 휴대폰 카메라로 찍어도 열 곳이 없어 헷갈린다. 링크 주소가 있을 때만 QR을 보여 준다.
+                                                if (joinCode.isNotEmpty()) T(joinCode.chunked(5).joinToString(" "), 34, FontWeight.Black)
+                                                if (invite == null) T("지금은 휴대폰이 열 수 있는 초대 주소를 확인하지 못해 QR을 만들 수 없어요. 주소가 다시 잡히면 QR이 자동으로 나와요.", 16, color = CarColors.Sub)
                                                 T(message, 17, color = CarColors.Sub)
                                                 if (joinCode.isEmpty()) CarButton("코드 다시 받기", Modifier.fillMaxWidth()) { attempt++ }
                                                 if (invite != null) CarButton("초대 링크 QR 보기", Modifier.fillMaxWidth()) { useCode = false }
