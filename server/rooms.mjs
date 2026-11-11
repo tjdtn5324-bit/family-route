@@ -45,7 +45,7 @@ function validatedPreferences(input) {
   return { companions: selected(input.companions, COMPANIONS), styles: selected(input.styles, STYLES), hours };
 }
 
-// 개발용 저장소: 프로세스 종료 시 데이터가 사라진다. 외부 공개 배포용이 아니다.
+// 가족방 상태 저장소. 시연 실행기는 exportSnapshot/fromSnapshot을 암호화 보관 파일에 연결한다.
 export class Rooms {
   #rooms = new Map();
   #sessions = new Map();
@@ -189,11 +189,54 @@ export class Rooms {
     return session;
   }
 
+  #accountRoom(memberToken, member) {
+    const room = this.#rooms.get(member.roomId);
+    const invite = [...this.#invites].find(([, id]) => id === member.roomId)?.[0];
+    if (!room || !invite) fail(404, '가족방을 찾을 수 없어요');
+    return { id: room.id, name: room.name, token: memberToken, invite, archived: !!room.archived, memberName: member.name,
+      memberCount: room.members.length, preview: room.destination?.name || '함께 여행을 준비하고 있어요' };
+  }
+
+  accountRooms(userId) {
+    this.#prune();
+    const memberships = new Map();
+    for (const [memberToken, member] of this.#sessions) {
+      if (member.role !== 'member' || member.accountUserId !== userId || memberships.has(member.roomId)) continue;
+      memberships.set(member.roomId, this.#accountRoom(memberToken, member));
+    }
+    return [...memberships.values()];
+  }
+
+  bindAccountRoom(userId, memberToken) {
+    const member = this.session(memberToken);
+    if (member.role !== 'member') fail(403, '가족 참가자로 참여한 방만 계정에 저장할 수 있어요');
+    if (member.accountUserId && member.accountUserId !== userId) fail(403, '다른 계정에 연결된 가족방 참가 정보예요');
+    // A new invitation may create another session for the same person. Keep the first
+    // membership for cross-device restoration, and revoke all their sessions on leave.
+    member.accountUserId = userId;
+    return this.accountRooms(userId).find(room => room.id === member.roomId);
+  }
+
+  leaveAccountRoom(userId, roomId) {
+    this.#prune();
+    const memberIds = new Set();
+    for (const [memberToken, member] of this.#sessions) {
+      if (member.role === 'member' && member.accountUserId === userId && member.roomId === roomId) {
+        memberIds.add(member.id);
+        this.#sessions.delete(memberToken);
+      }
+    }
+    if (!memberIds.size) fail(404, '가입한 가족방을 찾을 수 없어요');
+    const room = this.#rooms.get(roomId);
+    room.members = room.members.filter(member => !memberIds.has(member.id));
+    this.#notify(room);
+  }
+
   state(auth) {
     const s = this.session(auth), room = this.#rooms.get(s.roomId);
     const trips = this.#tripsOf(room), active = this.#activeTrip(room);
     const photos = room.photos || [];
-    return { room: { id: room.id, name: room.name, expiresAt: room.expiresAt < 8640000000000000 ? room.expiresAt : null, carLinkedAt: room.carLinkedAt || null }, me: { id: s.id ?? null, name: s.name, role: s.role }, archiveAvailable: this.#permanentMemories, archived: !!room.archived, members: room.members, proposals: room.proposals, route: room.route, completedTrip:room.completedTrip||null,
+    return { room: { id: room.id, name: room.name, expiresAt: room.expiresAt < 8640000000000000 ? room.expiresAt : null, carLinkedAt: room.carLinkedAt || null }, me: { id: s.id ?? null, name: s.name, role: s.role, accountLinked: !!s.accountUserId }, archiveAvailable: this.#permanentMemories, archived: !!room.archived, members: room.members, proposals: room.proposals, route: room.route, completedTrip:room.completedTrip||null,
       photos: photos.map(({id,memberId,memberName,createdAt,tripId})=>({id,memberId,memberName,createdAt,tripId:tripId||null})),
       // 가족방 안의 여행 묶음. 최근 여행이 앞에 온다. 사진은 여행별로 나뉜다.
       currentTripId: active?.id || null,

@@ -192,6 +192,17 @@ class MainActivity : ComponentActivity() {
                     autoRoom = false; room = next; pairingCode = ""; switchingRoom = false; notice = "휴대폰에서 만든 가족방에 연결했어요."
                 }
             }
+            fun openSavedRoom(saved: LiveRoom) {
+                replacing("‘${saved.name.ifBlank { "가족방" }}’ 방을 열면") {
+                    run("이 방에 연결할 수 없어요. 휴대폰의 차량 연결 코드를 확인해 주세요.") {
+                        val restored = client.state(saved)
+                        incoming = null; fromCourseTitle = ""; roomName = restored.roomName
+                        autoRoom = false; room = saved; applyState(restored)
+                        open(Screen.MAP)
+                        notice = "가족방에 다시 연결했어요."
+                    }
+                }
+            }
             fun finish(choice: String) = run("안내를 종료하지 못했어요. 연결을 확인해 주세요.") {
                 lastTripFromCourse = fromCourseTitle.isNotBlank()
                 val active = room ?: return@run
@@ -210,7 +221,7 @@ class MainActivity : ComponentActivity() {
                     try {
                         val s = client.state(active)
                         if (first && !autoRoom) {
-                            val recent = (listOf(active.copy(name = s.roomName)) + roomHistory.filterNot { it.driverToken == active.driverToken }).take(5)
+                            val recent = (listOf(active.copy(name = s.roomName)) + roomHistory.filterNot { it.driverToken == active.driverToken })
                             if (historyStore.save(recent)) roomHistory = recent
                         }
                         val fresh = if (first) null else s.proposals.lastOrNull { it.id !in seen }
@@ -224,10 +235,8 @@ class MainActivity : ComponentActivity() {
                     } catch (e: Exception) {
                         // 401: 서버에서 가족방이 닫혔다. 끊김으로 오래 두지 않고 처음 화면으로 돌아간다.
                         if (client.isRoomGone(e)) {
-                            val next = roomHistory.filterNot { it.driverToken == active.driverToken }
-                            if (historyStore.save(next)) roomHistory = next
                             room = null; route = null; proposals = emptyList(); waypoints = emptyList(); familyPhotos = emptyList(); roomName = ""; fromCourseTitle = ""
-                            notice = "가족방이 닫혔어요. 가족 메뉴에서 새로 연결해 주세요."
+                            notice = "가족방에 다시 연결이 필요해요. 가족 메뉴에서 확인해 주세요."
                             break
                         }
                         offline = true
@@ -303,7 +312,14 @@ class MainActivity : ComponentActivity() {
                                 Column(Modifier.align(Alignment.TopStart).padding(18.dp).width(430.dp).heightIn(max = 640.dp).background(CarColors.Navy, RoundedCornerShape(24.dp)).padding(22.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     val r = route
                                     if (r == null) {
-                                        T("어디로 떠날까요?", 30, FontWeight.Black, Color.White)
+                                        if (parked && roomHistory.isNotEmpty()) {
+                                            T("우리 가족방", 26, FontWeight.Bold, Color.White)
+                                            roomHistory.take(3).forEach { saved ->
+                                                CarButton(saved.name.ifBlank { "우리 가족 여행" }, Modifier.fillMaxWidth(), Btn.OnNavyStrong, enabled = !busy, icon = R.drawable.ic_nav_family) { openSavedRoom(saved) }
+                                            }
+                                            CarButton("가족방 모두 보기", Modifier.fillMaxWidth(), Btn.OnNavy, icon = R.drawable.ic_nav_family) { open(Screen.FAMILY) }
+                                        }
+                                        T(if (room == null) "어디로 떠날까요?" else roomName.ifBlank { "우리 가족 여행" }, 30, FontWeight.Black, Color.White)
                                         T(if (room == null) "목적지를 정하거나 가족을 먼저 초대해 보세요." else "목적지를 정하면 가족의 제안을 길에 담을 수 있어요.", 19, color = CarColors.OnNavySub)
                                         // 주행 중에는 누를 수 없는 버튼을 아예 보여 주지 않는다.
                                         if (parked) {
@@ -420,7 +436,7 @@ class MainActivity : ComponentActivity() {
                                                     val existing = room
                                                     if (existing != null && autoRoom) {
                                                         autoRoom = false
-                                                        val recent = (listOf(existing.copy(name = roomName)) + roomHistory.filterNot { it.driverToken == existing.driverToken }).take(5)
+                                                        val recent = (listOf(existing.copy(name = roomName)) + roomHistory.filterNot { it.driverToken == existing.driverToken })
                                                         if (historyStore.save(recent)) roomHistory = recent
                                                     } else room = client.create()
                                                 }
@@ -492,7 +508,7 @@ class MainActivity : ComponentActivity() {
                                     else Card {
                                         T("다른 가족방으로 바꾸기", 22, FontWeight.Bold)
                                         T("바꾸면 지도와 제안이 새 방의 내용으로 바뀌어요. 휴대폰의 ‘차량 연결’에 나온 숫자 6자리를 적어 주세요.", 18, color = CarColors.Sub)
-                                        TextInput(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, "숫자 6자리", "다른 가족방 연결 코드 숫자 6자리 입력", Modifier.fillMaxWidth(), 30, numeric = true) { connectByCode() }
+                                        TextInput(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, "숫자 6자리", "다른 가족방 연결 코드 숫자 6자리 입력", Modifier.fillMaxWidth(), 30, numeric = true) { replacing("다른 가족방으로 바꾸면") { connectByCode() } }
                                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                             CarButton("취소", Modifier.weight(1f), Btn.Soft) { switchingRoom = false; pairingCode = "" }
                                             CarButton(if (busy) "연결 중" else "바꾸고 연결", Modifier.weight(1.4f), enabled = !busy && pairingCode.length == 6) { replacing("다른 가족방으로 바꾸면") { connectByCode() } }
@@ -512,9 +528,7 @@ class MainActivity : ComponentActivity() {
                                                     CarButton("취소", kind = Btn.Soft) { confirmForget = null }
                                                 } else {
                                                     CarButton("열기", kind = Btn.Soft, enabled = !busy) {
-                                                        replacing("‘${saved.name.ifBlank { "가족방" }}’ 방을 열면") {
-                                                            run("이 방은 닫혔거나 지금 연결할 수 없어요.") { client.state(saved); proposals = emptyList(); route = null; waypoints = emptyList(); familyPhotos = emptyList(); roomName = saved.name; autoRoom = false; room = saved; notice = "가족방에 다시 연결했어요." }
-                                                        }
+                                                        openSavedRoom(saved)
                                                     }
                                                     Spacer(Modifier.width(14.dp))
                                                     CarButton("지우기", kind = Btn.Line, enabled = !busy) { confirmForget = saved.driverToken }

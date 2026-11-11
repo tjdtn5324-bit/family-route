@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Rooms } from './rooms.mjs';
 import { searchPlaces } from './place-search.mjs';
@@ -85,6 +85,26 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
       if (photo && req.method === 'GET') return send(200,rooms.getPhoto(auth,photo[1]));
       if (photo && req.method === 'DELETE') { rooms.deletePhoto(auth,photo[1]); return send(200,{ok:true}); }
       if (req.method === 'GET' && url.pathname === '/api/profile/config') return send(200, profile ? {enabled:true, ...profile.config} : {enabled:false});
+      const accountRoom = url.pathname.match(/^\/api\/profile\/rooms\/([a-f0-9-]{36})$/);
+      if (url.pathname === '/api/profile/rooms' || accountRoom) {
+        if (!profile) return send(503, {error:'계정 가족방 연결을 준비하고 있어요'});
+        let userId;
+        try {
+          userId = await profile.verify(auth);
+          if (typeof userId !== 'string' || !userId) throw Error('Missing identity');
+        } catch { return send(401, {error:'로그인을 다시 해 주세요'}); }
+        const accountKey = createHash('sha256').update('family-room-account:' + userId).digest('hex');
+        if (req.method === 'GET' && !accountRoom) return send(200, {accountKey, rooms:rooms.accountRooms(userId)});
+        if (req.method === 'POST' && !accountRoom) {
+          const input = await body();
+          return send(200, {accountKey, room:rooms.bindAccountRoom(userId, input.memberToken)});
+        }
+        if (req.method === 'DELETE' && accountRoom) {
+          rooms.leaveAccountRoom(userId, accountRoom[1]);
+          return send(200, {ok:true});
+        }
+        return send(404, {error:'찾을 수 없습니다'});
+      }
       if (req.method === 'GET' && url.pathname === '/api/profile/search') {
         if (!profile) return send(503, {error:'계정 저장은 아직 준비 중이에요'});
         try { await profile.verify(auth); } catch { return send(401, {error:'로그인을 다시 해 주세요'}); }

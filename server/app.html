@@ -137,6 +137,7 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
 <main>
   <!-- 우리 여행 -->
   <div id="view-home">
+    <section class="card" id="familyAccountCard"></section>
     <section class="card" id="myRoomsHome" hidden><h2>내 가족방</h2><p class="sub">가족방을 골라 여행과 사진을 이어 보세요.</p><div id="myRoomsHomeList"></div><div class="row"><button class="btn soft" id="homeAddRoom" type="button">새 가족방 만들기</button><button class="btn soft" id="homeJoinRoom" type="button">초대 코드로 참여</button></div></section>
     <div id="onboard">
       <div class="hero"><h1>가고 싶은 곳을<br>가족이 함께 모아요</h1><p>각자 휴대폰으로 장소를 보태면, 운전자가 차에서 확인해요.</p></div>
@@ -153,6 +154,7 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
 
     <section class="card" id="connecting" hidden><h2>가족방에 연결하는 중이에요</h2><p class="sub">잠시만 기다려 주세요. 계속 안 되면 인터넷 연결을 확인해 주세요.</p></section>
     <div id="homeRoom" hidden>
+      <button type="button" class="btn soft full" id="homeBackRooms">내 가족방 목록으로</button>
       <section class="card" id="roomCard">
         <span class="tag" id="roomTag">함께 준비하는 여행</span>
         <h2 id="roomName" style="margin-top:8px"></h2>
@@ -206,7 +208,7 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
   <!-- 가족방 -->
   <div id="view-rooms" hidden>
     <section class="card" id="currentRoomCard" hidden></section>
-    <section class="card"><h2>내 가족방</h2><p class="sub">이 휴대폰에서 만들거나 참여한 방이에요.</p><div id="roomList"></div></section>
+    <section class="card"><h2>내 가족방</h2><p class="sub">계정에 연결한 가족방과 이 휴대폰의 참여 기록이에요.</p><div id="roomList"></div></section>
     <section class="card"><h2>새 가족방 만들기</h2><div id="createFormRooms"></div></section>
   </div>
 </main>
@@ -331,12 +333,15 @@ function confirmSheet(title, message, okLabel, danger) {
 // ───────── 서버 호출 ─────────
 const ACCESS = 'family-route-profile-access', REFRESH = 'family-route-profile-refresh';
 const SAVED_LOCAL = 'family-route-saved-places-v1', CURRENT = 'family-route-current-room';
+const ACCOUNT_ROOM_IDS = 'family-route-account-linked-room-ids';
 let config = { enabled: false };
 let room = { token: '', invite: '' };
 let state = null, online = false, pollRun = 0;
+let accountRooms = [], accountKey = '', accountRoomsLoading = null, accountRoomsError = '';
+let homeDetail = false;
 // 예전 화면에서 로그인한 정보가 탭에만 남아 있으면 이어받는다.
 for (const k of [ACCESS, REFRESH]) if (!local.get(k) && tab.get(k)) local.set(k, tab.get(k));
-const signedIn = () => !!local.get(ACCESS);
+const signedIn = () => config.enabled && !!local.get(ACCESS);
 
 async function send(path, { method = 'GET', data, token, headers } = {}) {
   let r;
@@ -381,7 +386,24 @@ async function profileApi(path, method = 'GET', data, headers) {
   if (!r.ok) throw Error(r.body.error || '요청을 처리하지 못했어요.');
   return r.body;
 }
-function forgetLogin() { for (const k of [ACCESS, REFRESH]) { local.del(k); tab.del(k); } profile.epoch++; profile.places = []; profile.drafts = []; profile.open = null; profile.loaded = false; profile.memories = null; profile.likes = new Set(); profile.likesLoaded = false; }
+function clearAccountView() {
+  const wasAccountRoom = room.account === true;
+  accountRooms = []; accountKey = ''; accountRoomsError = ''; accountRoomsLoading = null;
+  profile.epoch++;
+  profile.places = []; profile.drafts = []; profile.open = null;
+  profile.loaded = false; profile.memories = null; profile.likes = new Set(); profile.likesLoaded = false;
+  if (wasAccountRoom) leaveRoom();
+}
+function forgetLogin() {
+  for (const k of [ACCESS, REFRESH]) { local.del(k); tab.del(k); }
+  clearAccountView();
+}
+window.addEventListener('storage', event => {
+  if (event.key !== ACCESS) return;
+  clearAccountView();
+  renderAll();
+  if (signedIn()) loadAccountRooms();
+});
 
 // ───────── 이 휴대폰의 가족방 기록 (기기 안에서 암호화) ─────────
 let history_ = [], historyDb = null, keyPromise = null;
@@ -427,33 +449,136 @@ async function loadHistory() {
     if (saved) {
       const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: saved.iv }, await historyKey(), saved.data);
       const list = JSON.parse(new TextDecoder().decode(plain));
-      if (Array.isArray(list)) history_ = list;
+      if (Array.isArray(list)) {
+        const linkedIds = linkedRoomIds();
+        history_ = list.filter(entry => !entry.accountKey && !linkedIds.has(entry.id));
+      }
     }
   } catch { historyDb = null; history_ = []; }
+}
+function linkedRoomIds() {
+  const ids = new Set();
+  for (const storage of [local, tab]) {
+    try {
+      const list = JSON.parse(storage.get(ACCOUNT_ROOM_IDS) || '[]');
+      if (Array.isArray(list)) for (const id of list) if (typeof id === 'string') ids.add(id);
+    } catch {}
+  }
+  return ids;
+}
+function markAccountRoom(id) {
+  const ids = linkedRoomIds();
+  ids.add(id);
+  const serialized = JSON.stringify([...ids]);
+  local.set(ACCOUNT_ROOM_IDS, serialized);
+  tab.set(ACCOUNT_ROOM_IDS, serialized);
+  return linkedRoomIds().has(id);
+}
+function unmarkAccountRoom(id) {
+  const ids = linkedRoomIds();
+  ids.delete(id);
+  const serialized = JSON.stringify([...ids]);
+  local.set(ACCOUNT_ROOM_IDS, serialized);
+  tab.set(ACCOUNT_ROOM_IDS, serialized);
+}
+function guestRooms() {
+  const linkedIds = linkedRoomIds();
+  return history_.filter(entry => !entry.accountKey && !linkedIds.has(entry.id));
+}
+function visibleRooms() {
+  const linked = signedIn() && accountKey ? accountRooms.map(entry => ({ ...entry, account: true })) : [];
+  return [...linked, ...guestRooms().filter(entry => !linked.some(other => other.id === entry.id))];
+}
+function currentRoomKey() { return accountKey ? CURRENT + ':' + accountKey : CURRENT; }
+async function loadAccountRooms() {
+  if (!config.enabled || !signedIn()) return;
+  const epoch = profile.epoch;
+  if (accountRoomsLoading?.epoch === epoch) return accountRoomsLoading.promise;
+  const request = {epoch, promise:null};
+  accountRoomsLoading = request;
+  request.promise = (async () => {
+    try {
+      const result = await profileApi('/api/profile/rooms');
+      if (epoch !== profile.epoch || !signedIn()) return;
+      if (typeof result.accountKey !== 'string' || !Array.isArray(result.rooms)) throw Error('가족방 목록을 확인하지 못했어요.');
+      accountKey = result.accountKey;
+      accountRooms = result.rooms;
+      accountRoomsError = '';
+      for (const entry of accountRooms) markAccountRoom(entry.id);
+    } catch (e) { if (epoch === profile.epoch) accountRoomsError = e.message; }
+    finally {
+      if (accountRoomsLoading === request) {
+        accountRoomsLoading = null;
+        renderAll();
+      }
+    }
+  })();
+  return request.promise;
+}
+async function connectRoomToAccount(entry) {
+  const epoch = profile.epoch;
+  const result = await profileApi('/api/profile/rooms', 'POST', { memberToken: entry.token });
+  // The server has linked this membership already. Never restore its older guest token after a failed archive write.
+  const marked = markAccountRoom(result.room.id);
+  history_ = history_.filter(other => other.id !== result.room.id);
+  try { await saveHistory(); }
+  catch { toast('계정 연결은 완료됐지만 이 휴대폰의 기록 정리를 저장하지 못했어요. 다음에는 로그인 후 가족방을 열어 주세요.', true); }
+  if (!marked) toast('브라우저의 사이트 저장 허용을 확인해 주세요. 계정에 연결한 방은 로그인 후 열어 주세요.', true);
+  if (epoch !== profile.epoch || !signedIn()) throw Error('계정이 바뀌었어요. 다시 로그인 상태를 확인해 주세요.');
+  accountKey = result.accountKey;
+  accountRooms = [result.room, ...accountRooms.filter(other => other.id !== result.room.id)];
+  return result.room;
+}
+async function enterJoinedRoom(token, invite) {
+  let linked;
+  if (config.enabled && signedIn()) {
+    try { linked = await connectRoomToAccount({ token, invite }); }
+    catch (e) { toast('이 휴대폰에 참여 기록을 남겼어요. 계정 연결은 다시 시도해 주세요. ' + e.message, true); }
+  }
+  await enterRoom(linked?.token || token, linked?.invite || invite, !!linked, !linked);
 }
 let remembered = '';
 async function rememberRoom(s) {
   const sig = room.token + ':' + s.room.name + ':' + !!s.archived;
   if (sig === remembered) return;
-  local.set(CURRENT, s.room.id);
-  history_ = [{ id: s.room.id, name: s.room.name, token: room.token, invite: room.invite, archived: !!s.archived }, ...history_.filter(x => x.id !== s.room.id)];
+  local.set(room.account ? currentRoomKey() : CURRENT, s.room.id);
+  if (room.account) {
+    const entry = accountRooms.find(item => item.id === s.room.id);
+    if (entry) Object.assign(entry, { name: s.room.name, memberName: s.me.name, memberCount: s.members.length, archived: !!s.archived });
+    remembered = sig;
+    renderRooms();
+    return;
+  }
+  history_ = [{ id: s.room.id, name: s.room.name, token: room.token, invite: room.invite, archived: !!s.archived, memberName: s.me.name, memberCount: s.members.length, preview: s.itinerary?.destination?.name || '' }, ...history_.filter(x => x.id !== s.room.id)];
   try { await saveHistory(); remembered = sig; } catch (e) { toast(e.message, true); }
   renderRooms();
 }
 
 // ───────── 가족방 들어가기·나가기 ─────────
 let roomEntryRun = 0;
-async function enterRoom(token, invite) {
+async function enterRoom(token, invite, account = accountRooms.some(entry => entry.token === token), freshGuest = false) {
   const entryRun = ++roomEntryRun;
+  if (account && (!signedIn() || !accountKey)) throw Error('로그인한 계정의 가족방을 다시 불러와 주세요.');
   const response = await send('/api/state', { token });
   if (entryRun !== roomEntryRun) return;
   if (!response.ok) throw Error(response.body.error || '가족방을 열지 못했어요. 다시 시도해 주세요.');
+  if (!account && response.body.me?.accountLinked === true) {
+    markAccountRoom(response.body.room.id);
+    history_ = history_.filter(entry => entry.id !== response.body.room.id);
+    await saveHistory().catch(() => {});
+    renderAll();
+    throw Error('계정에 연결된 가족방이에요. 본인 계정으로 로그인한 뒤 가족방 목록에서 열어 주세요.');
+  }
+  // Only a newly issued join/prepare capability can replace this device's previous account-room marker.
+  if (!account && freshGuest) unmarkAccountRoom(response.body.room.id);
   pollRun++;
-  room = { token, invite: invite || '' };
-  tab.set('family-route-member', token);
-  tab.set('family-route-invite', room.invite);
+  room = { token, invite: invite || '', account };
+  homeDetail = true;
+  if (account) { tab.del('family-route-member'); tab.del('family-route-invite'); }
+  else { tab.set('family-route-member', token); tab.set('family-route-invite', room.invite); }
   state = response.body; online = true; remembered = ''; sig = {}; photoCache.clear(); lastStatus = new Map(); carLinkSeen = undefined;
   await rememberRoom(state);
+  if (entryRun !== roomEntryRun) return;
   closeSheet(); renderAll();
   poll();
 }
@@ -461,9 +586,17 @@ function leaveRoom(message) {
   roomEntryRun++;
   pollRun++;
   room = { token: '', invite: '' }; state = null; online = false; sig = {};
-  tab.del('family-route-member'); tab.del('family-route-invite'); local.del(CURRENT);
+  tab.del('family-route-member'); tab.del('family-route-invite'); homeDetail = false;
   renderAll();
   if (message) toast(message, true);
+}
+function stopLinkedGuestSession(next) {
+  if (room.account || next.me?.accountLinked !== true) return false;
+  markAccountRoom(next.room.id);
+  history_ = history_.filter(entry => entry.id !== next.room.id);
+  saveHistory().catch(() => {});
+  leaveRoom('이 가족방은 계정에 연결됐어요. 본인 계정의 가족방 목록에서 다시 열어 주세요.');
+  return true;
 }
 async function poll() {
   const run = ++pollRun;
@@ -472,6 +605,7 @@ async function poll() {
       try {
         const next = await roomApi('/api/state');
         if (run !== pollRun) return;
+        if (stopLinkedGuestSession(next)) return;
         online = true; state = next;
         rememberRoom(next);
         renderAll();
@@ -491,6 +625,7 @@ async function refreshNow() {
   const token = room.token; if (!token) return;
   const next = await roomApi('/api/state');
   if (token !== room.token) return;
+  if (stopLinkedGuestSession(next)) return;
   state = next; renderAll();
 }
 
@@ -505,7 +640,7 @@ function createForm(box, prefix) {
     name.value = '';
     history.replaceState(null, '', location.pathname);
     pendingInvite = '';
-    await enterRoom(r.body.memberToken, r.body.invite);
+    await enterJoinedRoom(r.body.memberToken, r.body.invite);
     showTab('home');
     toast('가족방을 만들었어요. 가족을 초대해 보세요.');
   }, 'full');
@@ -518,13 +653,14 @@ let currentTab = 'home';
 for (const b of document.querySelectorAll('.tabbar button')) {
   const [label, ic] = TABS[b.dataset.tab];
   b.append(icon(ic), label);
-  b.onclick = () => showTab(b.dataset.tab);
+  b.onclick = () => { if (b.dataset.tab === 'home') homeDetail = false; showTab(b.dataset.tab); };
 }
 function showTab(name) {
   currentTab = name;
   for (const key of Object.keys(TABS)) $('view-' + key).hidden = key !== name;
   for (const b of document.querySelectorAll('.tabbar button')) { if (b.dataset.tab === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); }
   if (name === 'home' || name === 'rooms') renderAll();
+  if (name === 'home' || name === 'rooms') loadAccountRooms();
   if (name === 'mine') loadProfile();
   if (name === 'find' && findMode === 'courses' && !coursesLoaded) loadCourses('');
   window.scrollTo(0, 0);
@@ -559,11 +695,13 @@ function emptyBox(iconName, message, action) { return h('div', { class: 'empty' 
 const STATUS = { PENDING: ['운전자 결정 대기', ''], ACCEPTED: ['여행 경로에 담겼어요', 'ok'], REMOVED: ['경로에서 빠졌어요', 'gray'], REPLACED: ['경로가 바뀌었어요', 'gray'], DECLINED: ['이번에는 가지 않아요', 'gray'], FINISHED: ['다녀왔어요', 'gray'] };
 let lastStatus = new Map(), carLinkSeen;
 function renderHome() {
-  $('myRoomsHome').hidden = !history_.length;
-  if (changed('homeRooms', [history_, state?.room.id])) $('myRoomsHomeList').replaceChildren(...history_.map(roomRow));
+  renderFamilyAccount();
+  const entries = visibleRooms();
+  $('myRoomsHome').hidden = false;
+  if (changed('homeRooms', [entries, state?.room.id])) $('myRoomsHomeList').replaceChildren(...(entries.length ? entries.map(entry => roomRow(entry, true)) : [emptyBox('people', '아직 참여한 가족방이 없어요. 새로 만들거나 초대 코드로 참여하세요.')]));
   const inRoom = !!state && !pendingInvite;
   $('onboard').hidden = inRoom || (!!room.token && !pendingInvite);
-  $('homeRoom').hidden = !inRoom;
+  $('homeRoom').hidden = !inRoom || !homeDetail;
   $('connecting').hidden = inRoom || !$('onboard').hidden;
   if (!inRoom) {
     $('joinCard').hidden = !pendingInvite; $('createCard').hidden = !!pendingInvite || !wantsNewTrip;
@@ -791,8 +929,9 @@ async function shareInvite() {
 function joinByCode(){openSheet('초대 코드로 참여하기',body=>{
   const name=h('input',{id:'codeName',placeholder:'예: 엄마, 민지',maxlength:'30'}),code=h('input',{id:'joinCode',placeholder:'10자리 초대 코드',maxlength:'15',autocomplete:'off'});
   body.append(h('label',{for:'codeName',text:'어떻게 불러드릴까요?'}),name,h('label',{for:'joinCode',text:'가족 초대 코드 (차량 연결 코드와 달라요)'}),code,
-    btn('가족방 참여하기',async()=>{if(!name.value.trim()||!code.value.trim())throw Error('이름과 초대 코드를 입력해 주세요.');const r=await send('/api/join-code',{method:'POST',data:{name:name.value.trim(),code:code.value}});if(!r.ok)throw Error(r.body.error||'참여하지 못했어요.');closeSheet();await enterRoom(r.body.memberToken,r.body.invite);showTab('home');toast('가족방에 참여했어요.');},'full'));
+    btn('가족방 참여하기',async()=>{if(!name.value.trim()||!code.value.trim())throw Error('이름과 초대 코드를 입력해 주세요.');const r=await send('/api/join-code',{method:'POST',data:{name:name.value.trim(),code:code.value}});if(!r.ok)throw Error(r.body.error||'참여하지 못했어요.');closeSheet();await enterJoinedRoom(r.body.memberToken,r.body.invite);showTab('home');toast('가족방에 참여했어요.');},'full'));
 });}
+$('homeBackRooms').onclick = () => { homeDetail = false; renderHome(); window.scrollTo(0, 0); };
 $('homeAddRoom').onclick = () => { showTab('rooms'); $('roomsTrip').focus(); };
 $('homeJoinRoom').onclick = joinByCode;
 $('openMyRooms').onclick=()=>showTab('rooms');
@@ -1200,6 +1339,7 @@ function b64url(bytes) { let s = ''; for (const b of bytes) s += String.fromChar
 function randomText(n) { const b = new Uint8Array(n); crypto.getRandomValues(b); return b64url(b); }
 async function login() {
   if (!config.enabled) throw Error('지금은 계정 기능을 준비 중이에요.');
+  if (pendingInvite) tab.set('family-after-login-invite', pendingInvite);
   const verifier = randomText(48), st = randomText(24);
   tab.set('family-oauth-state', st); tab.set('family-oauth-verifier', verifier);
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
@@ -1214,6 +1354,9 @@ async function finishLogin() {
   const params = new URLSearchParams(location.search);
   if (!params.has('code') && !params.has('error')) return;
   const code = params.get('code'), st = params.get('state'), expected = tab.get('family-oauth-state'), verifier = tab.get('family-oauth-verifier');
+  const intendedInvite = tab.get('family-after-login-invite');
+  if (intendedInvite) pendingInvite = intendedInvite;
+  tab.del('family-after-login-invite');
   history.replaceState(null, '', location.pathname);
   tab.del('family-oauth-state'); tab.del('family-oauth-verifier');
   try {
@@ -1228,24 +1371,53 @@ async function finishLogin() {
 }
 
 // ───────── 가족방 탭 ─────────
-function roomRow(entry) {
-  const current = state && entry.id === state.room.id;
-  const row = h('div', { class: 'item' }, current ? h('span', { class: 'tag ok', text: '지금 열려 있는 방' }) : entry.archived ? h('span', { class: 'tag gray', text: '추억으로 보관한 방' }) : null, h('strong', { text: entry.name, style: current || entry.archived ? 'margin-top:6px' : '' }));
-  const actions = h('div', { class: 'row' });
-  actions.append(btn(current ? '이 가족방으로 돌아가기' : '이 방 열기', async () => {
-    const r = await send('/api/state', { token: entry.token });
-    if (!r.ok && r.body.error === '가족방에 다시 참여해 주세요') {
-      throw Error('이 가족방에 연결할 수 없어요. 초대한 가족에게 방 상태를 확인해 주세요.');
-    }
-    if (!r.ok) throw Error('지금은 열 수 없어요. 잠시 후 다시 눌러 주세요.');
+function renderFamilyAccount() {
+  const key = [config.enabled, signedIn(), accountKey, accountRoomsError, !!accountRoomsLoading];
+  if (!changed('familyAccount', key)) return;
+  const box = $('familyAccountCard');
+  if (!config.enabled) {
+    box.replaceChildren(h('p', {class:'sub', text:'지금은 이 휴대폰에 가족방을 보관해요. 계정 연결은 준비 중이에요.'}));
+  } else if (!signedIn()) {
+    box.replaceChildren(h('h2', {text:'어디서나 우리 가족과 이어서'}), h('p', {class:'sub', text:'로그인하면 내 가족방을 다른 휴대폰에서도 이어 볼 수 있어요.'}), btn('로그인 · 회원가입', login, 'full', 'user'));
+  } else {
+    box.replaceChildren(h('p', {class:'sub', text:accountRoomsLoading ? '내 계정의 가족방을 불러오고 있어요…' : accountRoomsError || '계정에 연결한 가족방은 다른 휴대폰에서도 이어 볼 수 있어요.'}));
+    if (accountRoomsError) box.append(btn('가족방 다시 불러오기', loadAccountRooms, 'soft full'));
+  }
+}
+function roomRow(entry, compact = false) {
+  const current = state && entry.id === state.room.id && entry.token === room.token;
+  const row = h('div', {class:'item'}, h('strong', {text:entry.name}),
+    h('p', {class:'sub', text:[entry.memberCount ? '가족 ' + entry.memberCount + '명' : '', entry.memberName ? entry.memberName + '님으로 참여' : '', entry.account ? '계정에 연결됨' : '이 휴대폰의 참여 기록'].filter(Boolean).join(' · ')}));
+  if (entry.preview) row.append(h('p', {class:'sub', text:entry.preview}));
+  const actions = h('div', {class:'row'});
+  actions.append(btn(current ? '이 가족방으로 돌아가기' : '가족방 열기', async () => {
     pendingInvite = ''; history.replaceState(null, '', location.pathname);
-    await enterRoom(entry.token, entry.invite); showTab('home');
+    await enterRoom(entry.token, entry.invite, !!entry.account); showTab('home');
   }));
-  actions.append(btn('목록에서 지우기', async () => {
-    if (!await confirmSheet('목록에서 지우기', '“' + entry.name + '” 방을 이 휴대폰 목록에서 지울까요? 방 자체는 사라지지 않지만, 다시 들어가려면 초대 링크가 필요해요.', '지우기', true)) return;
-    history_ = history_.filter(x => x.id !== entry.id); await saveHistory().catch(() => {});
-    if (current) leaveRoom(); else renderAll();
-  }, 'soft'));
+  if (!compact) {
+    if (entry.account) actions.append(btn('가족방 탈퇴', async () => {
+      if (!await confirmSheet('가족방을 탈퇴할까요?', '“' + entry.name + '” 방에서 나가면 가족 사진과 여행을 보려면 다시 초대받아야 해요. 다른 가족방은 그대로예요.', '이 가족방 탈퇴', true)) return;
+      await profileApi('/api/profile/rooms/' + encodeURIComponent(entry.id), 'DELETE');
+      accountRooms = accountRooms.filter(other => other.id !== entry.id);
+      history_ = history_.filter(other => other.id !== entry.id);
+      await saveHistory().catch(e => toast(e.message, true));
+      if (current) leaveRoom(); else renderAll();
+      toast('이 가족방에서 탈퇴했어요.');
+    }, 'soft'));
+    else {
+      if (config.enabled && signedIn()) actions.append(btn('내 계정에 연결', async () => {
+        if (!await confirmSheet('내 계정에 연결하기', '“' + entry.name + '” 방의 ' + (entry.memberName || '이 참가자') + '가 본인이 맞나요? 연결하면 같은 계정의 다른 휴대폰에서도 들어올 수 있어요.', '내 계정에 연결')) return;
+        const linked = await connectRoomToAccount(entry);
+        if (current) await enterRoom(linked.token, linked.invite, true);
+        renderAll(); toast('내 계정에 가족방을 연결했어요.');
+      }, 'soft'));
+      actions.append(btn('이 휴대폰 기록 지우기', async () => {
+        if (!await confirmSheet('이 휴대폰의 기록을 지울까요?', '“' + entry.name + '” 방에 다시 들어가려면 초대 링크가 필요해요.', '기록 지우기', true)) return;
+        history_ = history_.filter(other => other.id !== entry.id); await saveHistory();
+        if (current) leaveRoom(); else renderAll();
+      }, 'soft'));
+    }
+  }
   row.append(actions);
   return row;
 }
@@ -1257,8 +1429,9 @@ function renderRooms() {
       btn('가족에게 초대 링크 보내기', shareInvite, 'full', 'share'), btn('접속 주소 · 홈 화면에 추가', accessHelp, 'soft full'), btn('다른 가족방 초대 코드 입력', joinByCode, 'soft full'), btn('차량 연결 코드 받기', pairCar, 'soft full', 'car'),
       h('p', { class: 'note', text: '초대 링크를 받은 사람은 누구나 들어올 수 있어요. 가족에게만 보내 주세요.' }));
   }
-  if (changed('roomsList', [history_, state?.room.id])) {
-    $('roomList').replaceChildren(...(history_.length ? history_.map(roomRow) : [emptyBox('people', '아직 참여한 가족방이 없어요.')]));
+  const entries = visibleRooms();
+  if (changed('roomsList', [entries, state?.room.id, accountKey, signedIn()])) {
+    $('roomList').replaceChildren(...(entries.length ? entries.map(entry => roomRow(entry)) : [emptyBox('people', '아직 참여한 가족방이 없어요.')]));
   }
 }
 
@@ -1272,7 +1445,7 @@ $('joinBtn').replaceWith(Object.assign(btn('가족방 참여하기', async () =>
   const r = await send('/api/join', { method: 'POST', data: { invite: pendingInvite, name } });
   if (!r.ok) throw Error(r.status === 400 && /초대 링크/.test(r.body.error || '') ? '이 초대 링크는 닫혔어요. 가족에게 새 링크를 부탁해 주세요.' : r.body.error || '참여하지 못했어요. 잠시 후 다시 눌러 주세요.');
   const invite = pendingInvite; pendingInvite = ''; history.replaceState(null, '', location.pathname);
-  await enterRoom(r.body.memberToken, invite); toast('가족방에 참여했어요.');
+  await enterJoinedRoom(r.body.memberToken, invite); toast('가족방에 참여했어요.');
 }, 'full'), { id: 'joinBtn' }));
 $('changeParticipant').onclick = () => {
   if (!room.invite) { toast('새 초대 링크를 받아 주세요.', true); return; }
@@ -1283,7 +1456,7 @@ $('changeParticipant').onclick = () => {
       if (!name.value.trim()) throw Error('본인 이름을 적어 주세요.');
       const r = await send('/api/join', {method:'POST', data:{invite, name:name.value.trim()}});
       if (!r.ok) throw Error(r.body.error || '참여하지 못했어요.');
-      await enterRoom(r.body.memberToken, invite); showTab('home');
+      await enterJoinedRoom(r.body.memberToken, invite); showTab('home');
     }, 'full'));
   });
 };
@@ -1294,7 +1467,7 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && ro
 async function showInviteParticipant() {
   document.querySelectorAll('[data-return-participant]').forEach(el => el.remove());
   if (pendingInvite) {
-    const known = history_.find(x => x.invite === pendingInvite);
+    const known = visibleRooms().find(x => x.invite === pendingInvite);
     if (known) {
       try {
         const r = await send('/api/state', { token: known.token });
@@ -1325,17 +1498,20 @@ window.addEventListener('hashchange', () => {
   const cameFromLogin = new URLSearchParams(location.search).has('code');
   await finishLogin();
   await loadHistory();
+  await loadAccountRooms();
   await showInviteParticipant();
   if (!pendingInvite && !room.token) {
-    const wanted = local.get(CURRENT);
-    const entry = history_.find(x => x.id === wanted) || history_[0];
+    const wanted = local.get(currentRoomKey());
+    const entries = visibleRooms();
+    const entry = entries.find(x => x.id === wanted) || entries[0];
     const token = entry?.token || tab.get('family-route-member');
     if (token) {
-      const matching = history_.find(x => x.token === token);
+      const matching = visibleRooms().find(x => x.token === token);
       try { await enterRoom(token, matching?.invite || tab.get('family-route-invite') || ''); }
       catch { toast('가족방 연결을 확인해 주세요. 내 가족방 목록은 보관되어 있어요.', true); }
     }
   }
+  homeDetail = false;
   // 로그인하러 갔다 돌아왔으면 하려던 '추억 저장'을 이어서 한다.
   const afterLogin = tab.get('family-after-login') || '';
   if (afterLogin.startsWith('memory:')) {

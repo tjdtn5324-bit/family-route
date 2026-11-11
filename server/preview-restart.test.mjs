@@ -21,7 +21,7 @@ test('preview restores the same invitation, photo and courses after a process re
   t.after(async () => { await stop(); await rm(directory, { recursive: true, force: true }); });
   async function start() {
     child = spawn(process.execPath, [fileURLToPath(new URL('../tools/preview-phone.mjs', import.meta.url)), '0'], {
-      env: { ...process.env, FAMILY_LOCAL_ARCHIVE_DIR: directory }, windowsHide: true
+      env: { ...process.env, LOCALAPPDATA: directory, FAMILY_ACCOUNT_CONFIG: '', FAMILY_LOCAL_ARCHIVE_DIR: directory }, windowsHide: true
     });
     const [line] = await once(child.stdout, 'data');
     return line.toString().match(/http:\/\/127\.0\.0\.1:\d+/)[0];

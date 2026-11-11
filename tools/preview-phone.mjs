@@ -1,4 +1,4 @@
-// 휴대폰 화면 미리보기 전용. 카카오·AWS 없이 가짜 검색과 가짜 경로로 서버를 띄운다.
+// 모의 검색·경로를 제공한다. 선택 계정 설정이 있으면 기존 Cognito·DynamoDB를 연결한다.
 // 실행: node tools/preview-phone.mjs  →  http://127.0.0.1:8790
 import { createApp } from '../server/app.mjs';
 import { Rooms } from '../server/rooms.mjs';
@@ -6,6 +6,9 @@ import { openLocalArchive } from '../server/local-persistence.mjs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
+import { createConfiguredProfile } from './account-config.mjs';
+setDefaultAutoSelectFamilyAttemptTimeout(2000);
 // 포트를 인자로 바꿀 수 있다. 차량 앱(에뮬레이터)은 8789를 본다: node tools/preview-phone.mjs 8789
 const port = Number(process.argv[2] || 8790);
 const places = [
@@ -31,6 +34,7 @@ const api = createApp({
   apiKey: 'preview',
   rooms,
   persist: archive.save,
+  profile: createConfiguredProfile(),
   search: async q => places.filter(p => !q || p.name.includes(q) || p.address.includes(q) || q.includes('부산') || /busan/i.test(q)),
   directions: async c => ({ points: [[37.55, 126.97], [35.1152, 129.0415]], distance: 400000, duration: 16000 })
 });

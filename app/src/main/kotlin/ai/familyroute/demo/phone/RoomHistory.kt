@@ -30,11 +30,11 @@ class RoomHistory(context: Context) {
             val cipher = Cipher.getInstance("AES/GCM/NoPadding")
             cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, raw.copyOfRange(0, 12)))
             val arr = JSONArray(String(cipher.doFinal(raw.copyOfRange(12, raw.size)), Charsets.UTF_8))
-            (0 until arr.length()).map { arr.getJSONObject(it) }.map { LiveRoom(it.getString("invite"), it.getString("driverToken"), it.optString("name")) }.take(5)
+            (0 until arr.length()).map { arr.getJSONObject(it) }.map { LiveRoom(it.getString("invite"), it.getString("driverToken"), it.optString("name")) }
         }
     } catch (_: Exception) { emptyList() }
     fun save(rooms: List<LiveRoom>): Boolean = try {
-        val arr = JSONArray(); rooms.take(5).forEach { arr.put(JSONObject().put("invite",it.invite).put("driverToken",it.driverToken).put("name",it.name)) }
+        val arr = JSONArray(); rooms.distinctBy { it.driverToken }.forEach { arr.put(JSONObject().put("invite",it.invite).put("driverToken",it.driverToken).put("name",it.name)) }
         val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, key())
         val encoded = Base64.encodeToString(cipher.iv + cipher.doFinal(arr.toString().toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
         prefs.edit().putString("rooms",encoded).commit()

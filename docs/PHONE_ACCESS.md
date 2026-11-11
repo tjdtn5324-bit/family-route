@@ -4,6 +4,6 @@ PLEOS VM은 PC의 `http://10.0.2.2:8789`에 연결한다. 휴대폰은 Cloudflar
 
 시연 PC에서는 Windows 사용자 로그인 시 시작프로그램의 **AppaEodiga Preview** 바로가기가 `tools/start-preview.ps1`을 실행한다. 실행 중인 서버와 터널을 확인하고 종료된 서비스를 다시 시작한다. 다른 프로그램이 8789 포트를 사용하면 그 포트를 외부에 연결하지 않는다. 터널 상태 확인 포트는 127.0.0.1:20241이다.
 
-기본 미리보기의 데이터는 Windows의 `%LOCALAPPDATA%\AppaEodiga\preview-8789`에 보관한다. `archive.key`와 `family-archive.enc`를 한 쌍으로 유지한다. `FAMILY_LOCAL_ARCHIVE_DIR`로 다른 위치도 지정할 수 있다. 테스트 환경은 별도 폴더를 사용한다. 기존 메모리 전용 서버에서 꺼지기 전에 저장하지 않은 자료는 자동 이전되지 않는다.
+가족방과 사진의 데이터는 이 시연 PC 자동 실행의 `.runtime/`(프로젝트 폴더 안, Git 제외)에 보관한다. `archive.key`와 `family-archive.enc`를 한 쌍으로 유지한다. `FAMILY_LOCAL_ARCHIVE_DIR`로 다른 위치도 지정할 수 있다. 테스트 환경은 별도 폴더를 사용한다. 기존 메모리 전용 서버에서 꺼지기 전에 저장하지 않은 자료는 자동 이전되지 않는다.
 
 로그인 후 PLEOS VM에서 **추천 여행 보기 → 좋아요순**, **가족 → 기존 방 열기 → 가족 초대**, **사진 → 가족방 선택** 순으로 확인한다. 서버의 모의 검색/경로는 카카오 및 AWS와 독립적으로 동작한다.

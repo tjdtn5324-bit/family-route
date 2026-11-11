@@ -20,3 +20,5 @@ archive.key
 docs/review-2026-11-10/
 !apk/*_release.apk
 *.idsig
+account-config.local.json
+.runtime/
