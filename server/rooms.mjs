@@ -99,7 +99,7 @@ export class Rooms {
   static fromSnapshot(snapshot, { permanentMemories = false, sampleCourses = false } = {}) {
     if (!snapshot || snapshot.version !== 1 || !['rooms', 'sessions', 'invites', 'courses'].every(k => Array.isArray(snapshot[k]))) throw new Error('저장된 가족방 데이터를 읽을 수 없습니다');
     const result = new Rooms({permanentMemories, sampleCourses});
-    result.#rooms = new Map(snapshot.rooms.map(([id, room]) => [id, { ...structuredClone(room), listeners: new Set() }]));
+    result.#rooms = new Map(snapshot.rooms.map(([id, room]) => [id, { ...structuredClone(room), expiresAt: permanentMemories ? 8640000000000000 : room.expiresAt, listeners: new Set() }]));
     result.#sessions = new Map(structuredClone(snapshot.sessions));
     result.#invites = new Map(structuredClone(snapshot.invites));
     result.#joinCodes = new Map((snapshot.joinCodes || []).filter(([, v]) => v.expiresAt > Date.now()));
@@ -117,7 +117,7 @@ export class Rooms {
   create(name) {
     this.#prune();
     if (this.#rooms.size >= 100) throw new Error('현재 만들 수 있는 가족방이 가득 찼습니다');
-    const room = { id: randomUUID(), name: clean(name, 60) || '가족 여행', members: [], proposals: [], route: null, routeVersion: 0, preferences: defaultPreferences(), destination: null, listeners: new Set(), expiresAt: Date.now() + ROOM_TTL_MS };
+    const room = { id: randomUUID(), name: clean(name, 60) || '가족 여행', members: [], proposals: [], route: null, routeVersion: 0, preferences: defaultPreferences(), destination: null, listeners: new Set(), expiresAt: this.#permanentMemories ? 8640000000000000 : Date.now() + ROOM_TTL_MS };
     const invite = token(), driverToken = token();
     this.#rooms.set(room.id, room);
     this.#invites.set(invite, room.id);

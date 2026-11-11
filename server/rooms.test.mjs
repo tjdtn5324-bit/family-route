@@ -209,3 +209,19 @@ test('저장 묶음을 가족이 제안하면 기존 목적지와 경유지를 �
   assert.throws(()=>rooms.proposeSavedGroup(member.memberToken,'너무 많음',Array(6).fill(places[0])),/1~5곳/);
   const other=rooms.create('다른 방');assert.equal(rooms.state(other.driverToken).proposals.length,0);
 });
+
+test('보관된 병렬 가족방은 하루가 지나도 멤버와 초대를 복원한다', () => {
+  const rooms = new Rooms({permanentMemories:true});
+  const a = rooms.create('가족 A'), b = rooms.create('가족 B');
+  const memberA = rooms.join(a.invite, '엄마'), memberB = rooms.join(b.invite, '엄마');
+  const snapshot = rooms.exportSnapshot();
+  const now = Date.now;
+  try {
+    Date.now = () => now() + 24 * 60 * 60 * 1000;
+    const restored = Rooms.fromSnapshot(snapshot, {permanentMemories:true});
+    assert.equal(restored.state(memberA.memberToken).room.name, '가족 A');
+    assert.equal(restored.state(memberB.memberToken).room.name, '가족 B');
+    assert.equal(restored.state(memberA.memberToken).room.expiresAt, null);
+    assert.equal(restored.join(a.invite, '추가 가족').roomId, a.roomId);
+  } finally { Date.now = now; }
+});
