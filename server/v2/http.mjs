@@ -1,0 +1,138 @@
+// 아빠어디가 2판 HTTP 서버.
+// 사람(휴대폰)은 HttpOnly 쿠키 세션으로, 차량은 Authorization 헤더의 차량 토큰으로 구분한다.
+// 권한 검사는 모두 service.mjs에서 한다. 여기서는 요청을 읽고, 횟수를 제한하고, 상태 코드를 붙인다.
+import http from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { Service, HttpError } from './service.mjs';
+
+const COOKIE = 'fr_session';
+const json = { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' };
+
+function readCookie(req, name) {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const i = part.indexOf('='); if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return '';
+}
+// 터널(https)로 들어온 요청이면 Secure 쿠키를 쓴다.
+const isHttps = req => req.headers['x-forwarded-proto'] === 'https' || /"scheme":"https"/.test(String(req.headers['cf-visitor'] || ''));
+const sessionCookie = (req, token, maxAge) => `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${maxAge}${isHttps(req) ? '; Secure' : ''}`;
+
+export function createServer({ service = new Service(), apiKey = process.env.KAKAO_REST_API_KEY, search, directions, persist = null, pageFile = new URL('./app.html', import.meta.url), assets = {} } = {}) {
+  if (directions) service.directions = context => directions(context, { apiKey });
+  const limits = new Map();
+  const server = http.createServer(async (req, res) => {
+    let changed = false;
+    const send = (status, body, headers = {}) => {
+      if (persist && changed && status < 300) { try { persist(service.exportSnapshot()); } catch (e) { console.error('저장 실패', e.message); } }
+      res.writeHead(status, { ...json, ...headers }); res.end(JSON.stringify(body));
+    };
+    try {
+      const url = new URL(req.url, 'http://localhost'), path = url.pathname, method = req.method;
+      // ── 화면 ──
+      if (method === 'GET' && ['/', '/index.html', '/courses', '/account'].includes(path)) {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff', 'X-Frame-Options': 'DENY' });
+        return res.end(await readFile(pageFile));
+      }
+      if (method === 'GET' && assets[path]) {
+        const [file, type] = assets[path];
+        res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' });
+        return res.end(await readFile(file));
+      }
+      if (!path.startsWith('/api/')) { res.writeHead(404, json); return res.end(JSON.stringify({ error: '찾을 수 없어요' })); }
+
+      // ── 요청 횟수 제한(IP 기준, 1분) ──
+      const source = req.socket.remoteAddress || '';
+      const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(source);
+      const ip = local && typeof req.headers['cf-connecting-ip'] === 'string' ? req.headers['cf-connecting-ip'].slice(0, 80) : source;
+      const category = /^\/api\/auth\/(login|signup)$/.test(path) ? 'auth' : path === '/api/vehicle/pair' ? 'pair' : path === '/api/places' || path === '/api/drive/route' ? 'search' : method === 'GET' ? 'read' : 'write';
+      const max = { auth: 10, pair: 5, search: 30, read: 600, write: 120 }[category];
+      const now = Date.now(), key = ip + ':' + category;
+      if (limits.size > 20000) for (const [k, v] of limits) if (v.until <= now) limits.delete(k);
+      let bucket = limits.get(key); if (!bucket || bucket.until <= now) { bucket = { count: 0, until: now + 60000 }; limits.set(key, bucket); }
+      if (++bucket.count > max) return send(429, { error: '요청이 많아요. 잠시 후 다시 시도해 주세요' });
+
+      const body = async (maxSize = 16384) => {
+        if (!(req.headers['content-type'] || '').toLowerCase().startsWith('application/json')) throw new HttpError(415, 'JSON 요청이 필요해요');
+        const chunks = []; let size = 0;
+        for await (const c of req) { size += c.length; if (size > maxSize) throw new HttpError(413, '요청이 너무 커요'); chunks.push(c); }
+        return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+      };
+      const bearer = String(req.headers.authorization || '').replace(/^Bearer /, '');
+      // 차량 요청은 Authorization 헤더로, 사람 요청은 쿠키로만 인증한다(서로 섞지 않는다).
+      const actor = () => bearer ? service.vehicleActor(bearer) : service.userActor(readCookie(req, COOKIE));
+      const user = () => service.userActor(readCookie(req, COOKIE));
+      const write = async (fn, status = 200) => { const result = await fn(); changed = true; return send(status, result ?? { ok: true }); };
+      const m = (re) => path.match(re);
+      let p;
+
+      // ── 계정 ──
+      if (method === 'POST' && path === '/api/auth/signup') { const b = await body(); const r = await service.signup(b); changed = true; return send(201, { user: r.user }, { 'Set-Cookie': sessionCookie(req, r.token, 30 * 86400) }); }
+      if (method === 'POST' && path === '/api/auth/login') { const b = await body(); const r = await service.login(b); changed = true; return send(200, { user: r.user }, { 'Set-Cookie': sessionCookie(req, r.token, 30 * 86400) }); }
+      if (method === 'POST' && path === '/api/auth/logout') { service.logout(readCookie(req, COOKIE)); changed = true; return send(200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) }); }
+      if (method === 'GET' && path === '/api/me') return send(200, service.me(user()));
+
+      // ── 가족 ──
+      if (method === 'POST' && path === '/api/family') return await write(async () => service.createFamily(user(), await body()), 201);
+      if (method === 'POST' && path === '/api/family/rename') return await write(async () => service.renameFamily(user(), await body()));
+      if (method === 'POST' && path === '/api/family/invite') return await write(async () => { await body(); return service.createInvite(user()); });
+      if (method === 'GET' && path === '/api/family/invite') return send(200, service.invitePreview(user(), url.searchParams.get('code')));
+      if (method === 'POST' && path === '/api/family/join') return await write(async () => service.joinFamily(user(), await body()));
+      if (method === 'POST' && path === '/api/family/leave') return await write(async () => service.leaveFamily(user(), await body()));
+      if ((p = m(/^\/api\/family\/members\/([\w-]{36})\/remove$/)) && method === 'POST') return await write(async () => { await body(); return service.removeMember(user(), p[1]); });
+      if ((p = m(/^\/api\/family\/members\/([\w-]{36})\/admin$/)) && method === 'POST') return await write(async () => { await body(); return service.transferAdmin(user(), p[1]); });
+      if (method === 'POST' && path === '/api/family/vehicle-code') return await write(async () => { await body(); return service.vehicleCode(user()); });
+      if ((p = m(/^\/api\/family\/vehicles\/([\w-]{36})$/)) && method === 'DELETE') return await write(() => service.removeVehicle(user(), p[1]));
+
+      // ── 차량 ──
+      if (method === 'POST' && path === '/api/vehicle/pair') return await write(async () => service.pairVehicle(await body()), 201);
+      if (method === 'GET' && path === '/api/vehicle/home') return send(200, service.vehicleHome(service.vehicleActor(bearer)));
+      if (method === 'DELETE' && path === '/api/vehicle/pair') return await write(() => service.unpairSelf(service.vehicleActor(bearer)));
+
+      // ── 장소 검색과 혼자 운전하는 경로 ──
+      // 로그인이나 가족 연결 없이도 쓸 수 있다(차량은 가족과 연결하지 않아도 길안내가 되어야 한다).
+      // 개인 자료를 읽거나 남기지 않고, IP별 요청 수만 제한한다.
+      if (method === 'GET' && path === '/api/places') { if (!search) throw new HttpError(503, '장소 검색을 지금 쓸 수 없어요'); return send(200, { places: await search(url.searchParams.get('q'), { apiKey }) }); }
+      if (method === 'POST' && path === '/api/drive/route') return send(200, await service.soloRoute(await body()));
+
+      // ── 여행 ──
+      if (method === 'GET' && path === '/api/trips') return send(200, { trips: service.listTrips(actor()) });
+      if (method === 'POST' && path === '/api/trips') return await write(async () => service.createTrip(actor(), await body()), 201);
+      if ((p = m(/^\/api\/trips\/([\w-]{36})$/))) {
+        if (method === 'GET') return send(200, service.tripDetail(actor(), p[1]));
+        if (method === 'DELETE') return await write(() => service.deleteTrip(actor(), p[1]));
+      }
+      if ((p = m(/^\/api\/trips\/([\w-]{36})\/(update|proposals|order|start|finish|photos)$/)) && method === 'POST') {
+        const [, id, action] = p;
+        if (action === 'update') return await write(async () => service.updateTrip(actor(), id, await body()));
+        if (action === 'proposals') return await write(async () => service.proposePlace(actor(), id, await body()), 201);
+        if (action === 'order') return await write(async () => service.reorderStops(actor(), id, await body()));
+        if (action === 'start') return await write(async () => { await body(); return service.startTrip(actor(), id); });
+        if (action === 'finish') return await write(async () => { await body(); return service.finishTrip(actor(), id); });
+        if (action === 'photos') return await write(async () => service.addPhoto(actor(), id, await body(360000)), 201);
+      }
+      if ((p = m(/^\/api\/proposals\/([\w-]{36})(\/(vote|decide|arrive))?$/))) {
+        const [, id, , action] = p;
+        if (method === 'DELETE' && !action) return await write(() => service.removeProposal(actor(), id));
+        if (method === 'POST' && action === 'vote') return await write(async () => service.vote(actor(), id, await body()));
+        if (method === 'POST' && action === 'decide') return await write(async () => service.decide(actor(), id, await body()));
+        if (method === 'POST' && action === 'arrive') return await write(async () => { await body(); return service.arriveAt(actor(), id); });
+      }
+      if ((p = m(/^\/api\/photos\/([\w-]{36})$/))) {
+        if (method === 'GET') return send(200, service.photo(actor(), p[1]));
+        if (method === 'DELETE') return await write(() => service.deletePhoto(actor(), p[1]));
+      }
+      if (method === 'GET' && path === '/api/album') return send(200, { trips: service.album(actor()) });
+      return send(404, { error: '찾을 수 없어요' });
+    } catch (error) {
+      if (res.headersSent) return res.end();
+      const status = error instanceof SyntaxError ? 400 : error instanceof HttpError ? error.status : 500;
+      if (status === 500) console.error(error);
+      send(status, { error: status === 500 ? '잠시 문제가 생겼어요. 다시 시도해 주세요' : error instanceof SyntaxError ? '요청 형식을 확인해 주세요' : error.message },
+        status === 401 && !String(req.headers.authorization || '') ? { 'Set-Cookie': sessionCookie(req, '', 0) } : {});
+    }
+  });
+  server.headersTimeout = 10000; server.requestTimeout = 30000;
+  return server;
+}

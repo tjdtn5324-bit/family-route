@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="theme-color" content="#ffffff">
+<title>아빠어디가</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Ccircle cx='24' cy='24' r='24' fill='%23002c5f'/%3E%3Cpath d='M16 34V25a6 6 0 0 1 6-6h10m-5-6 6 6-6 6' fill='none' stroke='%23fff' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+/* 색: 남색(#002C5F)을 주 색으로, 밝은 파랑(#00AAD2)을 강조로 쓴다. 바탕은 흰색, 입력칸은 옅은 회색. */
+:root{--primary:#002c5f;--primary2:#0b3f7a;--accent:#00aad2;--text:#0b1f35;--sub:#6b7785;--line:#e6eaef;--field:#f4f6f8;--bg:#ffffff;--soft:#eef4f9;--ok:#0a7a55;--okbg:#e5f6ef;--bad:#c0392b;--badbg:#fdeeec;--warn:#8a5a00;--warnbg:#fff4dd}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:auto}
+body{margin:0;background:var(--bg);color:var(--text);font:17px/1.5 system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+h1,h2,h3,p{margin:0}
+h1{font-size:28px;line-height:1.25;letter-spacing:-.02em}
+h2{font-size:21px;line-height:1.3;letter-spacing:-.01em}
+h3{font-size:18px;line-height:1.35}
+.sub{color:var(--sub);font-size:15px}
+.wrap{max-width:520px;margin:0 auto;padding:20px 22px calc(110px + env(safe-area-inset-bottom))}
+/* 로그인·가입 */
+.auth{max-width:420px;margin:0 auto;padding:56px 24px 40px;min-height:100vh;display:flex;flex-direction:column}
+.logo{width:64px;height:64px;border-radius:50%;background:var(--primary);display:grid;place-items:center;margin:0 auto 34px;box-shadow:0 6px 20px #002c5f33}
+.logo svg{width:34px;height:34px}
+.auth h1{margin-bottom:6px}
+.auth .sub{margin-bottom:26px}
+label{display:block;font-size:15px;font-weight:600;margin:16px 0 8px;color:var(--text)}
+input[type=text],input[type=email],input[type=password],input[type=date],input[type=search],textarea,select{width:100%;border:1.5px solid transparent;border-radius:14px;background:var(--field);color:var(--text);font:inherit;padding:15px 16px;min-height:54px;outline:none}
+textarea{min-height:88px;resize:vertical}
+input:focus,textarea:focus,select:focus{border-color:var(--accent);background:#fff}
+.pw{position:relative}
+.pw button{position:absolute;right:6px;top:50%;transform:translateY(-50%);border:0;background:transparent;color:var(--sub);font-size:14px;font-weight:600;padding:10px;min-height:44px}
+.field-error{color:var(--bad);font-size:14px;margin-top:6px}
+.btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:54px;border:0;border-radius:14px;background:var(--primary);color:#fff;font:inherit;font-weight:700;font-size:17px;cursor:pointer;padding:12px 18px;text-align:center}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.line{background:#fff;color:var(--text);box-shadow:inset 0 0 0 1.5px var(--line)}
+.btn.soft{background:var(--soft);color:var(--primary)}
+.btn.danger{background:var(--badbg);color:var(--bad)}
+.btn.small{min-height:44px;font-size:15px;width:auto;padding:8px 14px;border-radius:12px}
+.btn svg{width:20px;height:20px}
+.mt{margin-top:14px}.mt2{margin-top:24px}
+.or{display:flex;align-items:center;gap:12px;color:var(--sub);font-size:14px;margin:22px 0}
+.or:before,.or:after{content:"";flex:1;height:1px;background:var(--line)}
+.switch{margin-top:auto;padding-top:28px;text-align:center;color:var(--sub);font-size:15px}
+.switch button{border:0;background:none;color:var(--primary);font:inherit;font-weight:700;cursor:pointer;padding:6px}
+.link{border:0;background:none;color:var(--primary);font:inherit;font-weight:600;cursor:pointer;padding:4px 0}
+/* 상단 */
+.top{position:sticky;top:0;z-index:5;background:#fffffff2;backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:calc(10px + env(safe-area-inset-top)) 22px 10px}
+.top-in{max-width:520px;margin:0 auto;display:flex;align-items:center;gap:12px;min-height:44px}
+.top .mini{width:34px;height:34px;border-radius:50%;background:var(--primary);display:grid;place-items:center;flex:none}
+.top .mini svg{width:19px;height:19px}
+.top strong{flex:1;font-size:18px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.back{border:0;background:var(--soft);color:var(--primary);width:44px;height:44px;border-radius:50%;display:grid;place-items:center;flex:none;cursor:pointer}
+.back svg{width:20px;height:20px}
+/* 카드·목록 */
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:18px;margin-top:14px}
+.card.tap{cursor:pointer;width:100%;text-align:left;font:inherit;color:inherit;display:block}
+.row{display:flex;gap:10px;align-items:center}
+.row.wrapx{flex-wrap:wrap}
+.row>.btn{flex:1}
+.grow{flex:1;min-width:0}
+.chip{display:inline-flex;align-items:center;gap:4px;font-size:13px;font-weight:700;border-radius:999px;padding:4px 10px;background:var(--soft);color:var(--primary);white-space:nowrap}
+.chip.ok{background:var(--okbg);color:var(--ok)}.chip.warn{background:var(--warnbg);color:var(--warn)}.chip.gray{background:#f0f2f4;color:var(--sub)}.chip.live{background:var(--primary);color:#fff}
+.item{padding:14px 0;border-top:1px solid var(--line)}
+.item:first-child{border-top:0;padding-top:2px}
+.item strong{display:block;font-size:17px;overflow-wrap:anywhere}
+.quote{background:var(--field);border-radius:12px;padding:10px 12px;margin-top:8px;font-size:15px;overflow-wrap:anywhere}
+.empty{text-align:center;color:var(--sub);padding:26px 8px}
+.empty svg{width:42px;height:42px;stroke:#b7c1cc;margin-bottom:8px}
+.section-title{display:flex;align-items:center;justify-content:space-between;margin-top:26px}
+.seg{display:flex;background:var(--field);border-radius:14px;padding:4px;gap:4px;margin-top:18px}
+.seg button{flex:1;border:0;background:transparent;border-radius:11px;min-height:46px;font:inherit;font-weight:700;font-size:15px;color:var(--sub);cursor:pointer}
+.seg button[aria-pressed=true]{background:#fff;color:var(--primary);box-shadow:0 1px 4px #0b1f3518}
+.steps{list-style:none;margin:6px 0 0;padding:0}
+.steps li{display:flex;gap:12px;padding:10px 0;align-items:flex-start}
+.dot{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:14px;background:var(--soft);color:var(--primary)}
+.dot.end{background:var(--primary);color:#fff}.dot.start{background:#fff;box-shadow:inset 0 0 0 2px var(--line);color:var(--sub)}.dot.done{background:var(--okbg);color:var(--ok)}
+.photos{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.photos button{aspect-ratio:1;border:0;border-radius:12px;overflow:hidden;background:var(--field);padding:0;color:var(--sub);font:inherit;font-size:13px;cursor:pointer}
+.photos img{width:100%;height:100%;object-fit:cover;display:block}
+.photos .add{display:grid;place-items:center;align-content:center;gap:2px;box-shadow:inset 0 0 0 1.5px var(--line);background:#fff;color:var(--primary);font-weight:700}
+.photos .add svg{width:24px;height:24px}
+.stat{display:flex;gap:16px;margin-top:10px;color:var(--sub);font-size:14px}
+.stat b{color:var(--text)}
+/* 하단 메뉴 */
+.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:#fff;border-top:1px solid var(--line);padding:6px 8px calc(6px + env(safe-area-inset-bottom))}
+.tabs-in{max-width:520px;margin:0 auto;display:flex}
+.tabs button{flex:1;border:0;background:transparent;min-height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;color:#94a0ad;font:inherit;font-size:13px;font-weight:700;cursor:pointer;border-radius:12px}
+.tabs svg{width:24px;height:24px}
+.tabs button[aria-current=page]{color:var(--primary)}
+/* 시트·알림 */
+dialog{border:0;padding:0;color:var(--text);background:#fff;max-width:520px;width:100%}
+dialog::backdrop{background:#0b1f3566}
+#sheet{margin:auto auto 0;border-radius:22px 22px 0 0;max-height:90vh;overflow:auto;padding:6px 22px calc(24px + env(safe-area-inset-bottom))}
+.sheet-head{position:sticky;top:0;background:#fff;display:flex;align-items:center;gap:10px;padding:16px 0 8px;z-index:1}
+.sheet-head h2{flex:1}
+#viewer{background:#000;width:100vw;height:100vh;max-width:none;max-height:none;margin:0}
+#viewer img{width:100%;height:calc(100% - 90px);object-fit:contain}
+#viewer .bar{height:90px;display:flex;align-items:center;gap:10px;padding:0 18px;color:#fff}
+#toast{position:fixed;inset:auto;margin:0;border:0;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);max-width:calc(100vw - 32px);width:max-content;background:#0b1f35;color:#fff;border-radius:14px;padding:13px 18px;font-weight:600;font-size:15px;box-shadow:0 8px 24px #0b1f3540;opacity:0;transition:opacity .2s;pointer-events:none}
+#toast.show{opacity:1}#toast.bad{background:var(--bad)}
+.note{background:var(--soft);border-radius:14px;padding:12px 14px;font-size:14px;color:var(--text);margin-top:12px}
+.note.warn{background:var(--warnbg);color:var(--warn)}.note.bad{background:var(--badbg);color:var(--bad)}
+.check{display:flex;gap:10px;align-items:flex-start;padding:12px;border-radius:12px;background:var(--field);margin-top:10px;font-size:15px;cursor:pointer}
+.check input{width:20px;height:20px;margin:2px 0 0;accent-color:var(--primary);flex:none}
+.radio{display:flex;align-items:center;gap:10px;min-height:52px;padding:0 14px;border-radius:12px;background:var(--field);margin-top:8px;cursor:pointer;font-weight:600}
+.radio:has(input:checked){background:var(--soft);box-shadow:inset 0 0 0 1.5px var(--primary)}
+.radio input{accent-color:var(--primary);width:18px;height:18px}
+button:focus-visible,input:focus-visible,a:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+@media(prefers-reduced-motion:reduce){#toast{transition:none}}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<nav class="tabs" id="tabs" hidden><div class="tabs-in" id="tabsIn"></div></nav>
+<dialog id="sheet" aria-labelledby="sheetTitle"><div class="sheet-head"><h2 id="sheetTitle"></h2><button class="back" type="button" id="sheetClose" aria-label="닫기"></button></div><div id="sheetBody"></div></dialog>
+<dialog id="viewer" aria-label="사진 크게 보기"><img id="viewerImg" alt=""><div class="bar"><span id="viewerWho" class="grow"></span><button class="btn small danger" id="viewerDel" type="button" hidden>삭제</button><button class="btn small soft" id="viewerClose" type="button">닫기</button></div></dialog>
+<div id="toast" popover="manual" role="status" aria-live="polite"></div>
+<script>
+'use strict';
+// ───────── 공용 도구 ─────────
+const $ = id => document.getElementById(id);
+const ICON = {
+  logo: '<path d="M7 19v-6a4 4 0 0 1 4-4h7m-4-4 4 4-4 4" stroke="#fff" stroke-width="2.6"/>',
+  trip: '<path d="M12 21s-6.5-6-6.5-11a6.5 6.5 0 0 1 13 0c0 5-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.3"/>',
+  album: '<rect x="3" y="5" width="18" height="15" rx="2"/><path d="m3 16 5-5 4 4 3-3 6 6"/><circle cx="15.5" cy="9.5" r="1.3"/>',
+  family: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M16 14.3c2.8.2 5 2.6 5 5.7"/>',
+  back: '<path d="m15 5-7 7 7 7"/>', close: '<path d="M6 6l12 12M18 6 6 18"/>', plus: '<path d="M12 5v14M5 12h14"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>', share: '<path d="M12 15V4m0 0L8 8m4-4 4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
+  car: '<path d="M4 16v-3l2-5.5A2 2 0 0 1 7.9 6h8.2a2 2 0 0 1 1.9 1.5L20 13v3"/><rect x="3" y="13" width="18" height="5" rx="1.5"/>', flag: '<path d="M6 21V4m0 1h11l-2.5 4L17 13H6"/>'
+};
+const svg = (name, extra = '') => { const s = document.createElement('span'); s.style.display = 'contents'; s.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${ICON[name]}</svg>`; return s.firstChild; };
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'class') e.className = v; else if (k === 'text') e.textContent = v;
+    else if (k.startsWith('on')) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? '' : v);
+  }
+  for (const kid of kids.flat(Infinity)) if (kid != null && kid !== false) e.append(kid);
+  return e;
+}
+let toastTimer;
+function toast(msg, bad) { const t = $('toast'); t.textContent = msg; t.className = 'show' + (bad ? ' bad' : ''); try { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); } catch {} clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.className = ''; try { t.hidePopover(); } catch {} }, Math.max(3500, msg.length * 90)); }
+/** 누르는 동안 잠그고, 실패하면 이유를 알려 주는 버튼 */
+function btn(label, fn, cls = '', icon) {
+  const b = h('button', { class: 'btn ' + cls, type: 'button' }, icon ? svg(icon) : null, label);
+  b.addEventListener('click', async () => { if (b.disabled) return; b.disabled = true; try { await fn(b); } catch (e) { if (e.message) toast(e.message, true); } finally { b.disabled = false; } });
+  return b;
+}
+const fmtDate = d => d ? new Date(d + 'T00:00:00').toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' }) : '날짜 미정';
+const fmtDay = ms => new Date(ms).toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+const km = m => m >= 1000 ? (m / 1000).toFixed(m >= 100000 ? 0 : 1) + 'km' : m + 'm';
+const mins = s => { const m = Math.round(s / 60); return m >= 60 ? Math.floor(m / 60) + '시간 ' + (m % 60) + '분' : m + '분'; };
+function eul(w) { const c = w.charCodeAt(w.length - 1); return w + (c >= 0xac00 && c <= 0xd7a3 ? ((c - 0xac00) % 28 ? '을' : '를') : '을(를)'); }
+
+// ───────── 서버 호출 ─────────
+// 로그인 정보는 브라우저가 HttpOnly 쿠키로만 보관한다. 이 화면의 스크립트는 세션 값을 알지 못하고, 가족 자료를 기기에 저장하지 않는다.
+async function api(path, { method, data, big } = {}) {
+  let r;
+  try { r = await fetch(path, { method: method || (data ? 'POST' : 'GET'), credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: data ? JSON.stringify(data) : undefined, signal: AbortSignal.timeout(big ? 20000 : 10000) }); }
+  catch { throw Error('연결이 느리거나 끊겼어요. 잠시 후 다시 시도해 주세요.'); }
+  let body = {}; try { body = await r.json(); } catch {}
+  if (r.status === 401 && !path.startsWith('/api/auth/')) { resetToLogin(body.error || '로그인이 끝났어요. 다시 로그인해 주세요.'); throw Error(''); }
+  if (!r.ok) throw Error(body.error || '잠시 문제가 생겼어요. 다시 시도해 주세요.');
+  return body;
+}
+
+// ───────── 상태와 화면 전환 ─────────
+// 화면 상태는 메모리에만 있다. 로그아웃하면 페이지를 새로 불러 전부 비운다.
+const S = { me: null, tab: 'trips', view: null, trips: [], trip: null, tripTab: 'ideas', album: [], pendingInvite: new URLSearchParams(location.search).get('invite') || new URLSearchParams(location.hash.slice(1)).get('invite') || '' };
+let pollTimer = 0;
+function clearUrl() { if (location.search || location.hash) history.replaceState(null, '', '/'); }
+function resetToLogin(message) { S.me = null; clearInterval(pollTimer); renderAuth('login', message); }
+function setTabs(show) {
+  $('tabs').hidden = !show; if (!show) return;
+  const tabs = [['trips', '여행', 'trip'], ['album', '추억 앨범', 'album'], ['family', '우리 가족', 'family']];
+  $('tabsIn').replaceChildren(...tabs.map(([key, label, icon]) => { const b = h('button', { type: 'button', 'aria-current': S.tab === key && !S.view ? 'page' : null }, svg(icon), label); b.onclick = () => go(key); return b; }));
+}
+function topBar(title, onBack) {
+  const bar = h('header', { class: 'top' }, h('div', { class: 'top-in' }, onBack ? h('button', { class: 'back', type: 'button', 'aria-label': '뒤로', onclick: onBack }, svg('back')) : h('span', { class: 'mini' }, svg('logo', 'stroke-width="2.6"')), h('strong', { text: title })));
+  return bar;
+}
+function screen(title, onBack, ...content) { clearInterval(pollTimer); $('app').replaceChildren(topBar(title, onBack), h('main', { class: 'wrap' }, ...content)); window.scrollTo(0, 0); }
+function empty(icon, text, action) { return h('div', { class: 'empty' }, svg(icon), h('p', { text }), action ? h('div', { class: 'mt' }, action) : null); }
+async function go(tab) { S.tab = tab; S.view = null; if (tab === 'trips') await showTrips(); else if (tab === 'album') await showAlbum(); else await showFamily(); }
+
+// ───────── 시트(아래에서 올라오는 창) ─────────
+function openSheet(title, build) { $('sheetTitle').textContent = title; $('sheetBody').replaceChildren(); build($('sheetBody')); if (!$('sheet').open) $('sheet').showModal(); $('sheet').scrollTop = 0; }
+function closeSheet() { if ($('sheet').open) $('sheet').close(); }
+$('sheetClose').append(svg('close')); $('sheetClose').onclick = closeSheet;
+// 바깥 어두운 곳을 눌렀을 때만 닫는다. 쓰던 글이 있으면 닫지 않는다.
+$('sheet').addEventListener('click', e => { if (e.target !== $('sheet')) return; const r = $('sheet').getBoundingClientRect(); const out = e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom; if (out && ![...$('sheetBody').querySelectorAll('input[type=text],textarea')].some(x => x.value.trim())) closeSheet(); });
+function confirmSheet(title, message, ok, danger) {
+  return new Promise(resolve => {
+    let done = false; const finish = v => { if (done) return; done = true; closeSheet(); resolve(v); };
+    openSheet(title, body => body.append(h('p', { class: 'sub', text: message }), h('div', { class: 'mt2' }, h('button', { class: 'btn ' + (danger ? 'danger' : ''), type: 'button', text: ok, onclick: () => finish(true) })), h('div', { class: 'mt' }, h('button', { class: 'btn line', type: 'button', text: '취소', onclick: () => finish(false) }))));
+    $('sheet').addEventListener('close', () => finish(false), { once: true });
+  });
+}
+
+// ───────── ① 로그인 / 가입 ─────────
+function renderAuth(mode = 'login', message = '') {
+  setTabs(false); closeSheet();
+  const signup = mode === 'signup';
+  const email = h('input', { type: 'email', id: 'email', autocomplete: 'email', placeholder: 'example@email.com', inputmode: 'email' });
+  const pw = h('input', { type: 'password', id: 'password', autocomplete: signup ? 'new-password' : 'current-password', placeholder: signup ? '8자 이상' : '비밀번호' });
+  const name = h('input', { type: 'text', id: 'name', autocomplete: 'nickname', maxlength: 20, placeholder: '예: 엄마, 민지' });
+  const err = h('p', { class: 'field-error', role: 'alert', text: message });
+  const toggle = h('button', { type: 'button', text: '보기', 'aria-label': '비밀번호 보기' });
+  toggle.onclick = () => { const v = pw.type === 'password'; pw.type = v ? 'text' : 'password'; toggle.textContent = v ? '숨기기' : '보기'; };
+  const submit = btn(signup ? '가입하기' : '로그인', async () => {
+    err.textContent = '';
+    const data = { email: email.value.trim(), password: pw.value };
+    if (!data.email) { email.focus(); throw (err.textContent = '이메일을 적어 주세요', Error('')); }
+    if (!data.password) { pw.focus(); throw (err.textContent = '비밀번호를 적어 주세요', Error('')); }
+    if (signup) { data.name = name.value.trim(); if (!data.name) { name.focus(); throw (err.textContent = '가족에게 보일 이름을 적어 주세요', Error('')); } }
+    try { await api(signup ? '/api/auth/signup' : '/api/auth/login', { data }); }
+    catch (e) { err.textContent = e.message; throw Error(''); }
+    await boot();
+  });
+  const form = h('form', { novalidate: true }, h('label', { for: 'email', text: '이메일' }), email, signup ? [h('label', { for: 'name', text: '가족에게 보일 이름' }), name] : null,
+    h('label', { for: 'password', text: '비밀번호' }), h('div', { class: 'pw' }, pw, toggle), err, h('div', { class: 'mt2' }, submit));
+  form.onsubmit = e => { e.preventDefault(); submit.click(); };
+  for (const input of [email, pw, name]) input.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submit.click(); } });
+  const sw = h('button', { type: 'button', text: signup ? '로그인' : '가입하기' }); sw.onclick = () => renderAuth(signup ? 'login' : 'signup');
+  $('app').replaceChildren(h('main', { class: 'auth' },
+    h('div', { class: 'logo' }, svg('logo', 'stroke-width="2.6"')),
+    h('h1', { text: signup ? '가입하기' : '로그인' }),
+    h('p', { class: 'sub', text: signup ? '가족 모두 각자 계정으로 함께해요.' : '이메일과 비밀번호를 입력해 주세요.' }),
+    S.pendingInvite ? h('p', { class: 'note', text: '가족이 보낸 초대를 열었어요. ' + (signup ? '가입' : '로그인') + '하면 바로 가족에 참여할 수 있어요.' }) : null,
+    form,
+    h('p', { class: 'switch' }, signup ? '이미 계정이 있나요? ' : '계정이 없나요? ', sw)));
+  (signup ? name : email).focus();
+}
+
+// ───────── 시작 ─────────
+async function boot() {
+  try { S.me = await api('/api/me'); } catch { return; }
+  clearUrl();
+  if (S.pendingInvite) { const code = S.pendingInvite; S.pendingInvite = ''; return showJoin(code); }
+  if (!S.me.family) return showNoFamily();
+  setTabs(true); await go(S.tab);
+}
+
+// ───────── 가족이 없을 때: 만들기 또는 참여 ─────────
+function showNoFamily() {
+  setTabs(false);
+  const name = h('input', { type: 'text', id: 'familyName', maxlength: 30, placeholder: '예: 민지네 가족' });
+  const code = h('input', { type: 'text', id: 'inviteCode', maxlength: 12, placeholder: '8자리 초대 코드', autocapitalize: 'characters' });
+  screen('반가워요, ' + S.me.user.name + '님', null,
+    h('h1', { text: '가족 공간을 만들어요', class: 'mt' }),
+    h('p', { class: 'sub mt', text: '한 사람은 한 번에 한 가족에 속해요. 가족 공간을 만들거나 가족에게 받은 초대 코드로 참여해 주세요.' }),
+    h('div', { class: 'card' }, h('h2', { text: '새 가족 만들기' }), h('label', { for: 'familyName', text: '가족 이름' }), name,
+      h('div', { class: 'mt' }, btn('가족 만들기', async () => { if (!name.value.trim()) { name.focus(); throw Error('가족 이름을 적어 주세요.'); } await api('/api/family', { data: { name: name.value } }); toast('가족을 만들었어요. 가족을 초대해 보세요.'); S.tab = 'family'; await boot(); }))),
+    h('div', { class: 'card' }, h('h2', { text: '초대 코드로 참여' }), h('label', { for: 'inviteCode', text: '초대 코드' }), code,
+      h('div', { class: 'mt' }, btn('코드 확인', async () => { if (!code.value.trim()) { code.focus(); throw Error('초대 코드를 적어 주세요.'); } await showJoin(code.value); }, 'line'))),
+    accountCard());
+}
+async function showJoin(code) {
+  let preview;
+  try { preview = await api('/api/family/invite?code=' + encodeURIComponent(code)); }
+  catch (e) { toast(e.message, true); return S.me.family ? boot() : showNoFamily(); }
+  setTabs(false);
+  const already = preview.alreadyMember, other = S.me.family && !already;
+  screen('가족 초대', () => boot(),
+    h('div', { class: 'card' }, h('span', { class: 'chip', text: '초대받은 가족' }), h('h1', { class: 'mt', text: preview.familyName }), h('p', { class: 'sub', text: '지금 ' + preview.memberCount + '명이 함께하고 있어요.' }),
+      already ? h('p', { class: 'note', text: '이미 이 가족에 속해 있어요.' }) : other ? h('p', { class: 'note warn', text: '지금 "' + S.me.family.name + '"에 속해 있어요. 다른 가족에 참여하려면 우리 가족 화면에서 먼저 나와 주세요.' }) : null,
+      h('div', { class: 'mt2' }, already || other ? btn('돌아가기', () => boot(), 'line') : btn(preview.familyName + '에 참여하기', async () => { await api('/api/family/join', { data: { code } }); toast(preview.familyName + '에 참여했어요.'); S.tab = 'trips'; await boot(); }))));
+}
+
+// ───────── ③ 가족 여행 목록 ─────────
+const STATUS = { PLANNING: ['준비 중', ''], ONGOING: ['여행 중', 'live'], DONE: ['다녀옴', 'ok'] };
+async function showTrips() {
+  setTabs(true);
+  screen(S.me.family.name, null, h('p', { class: 'empty', text: '여행을 불러오고 있어요…' }));
+  const { trips } = await api('/api/trips'); S.trips = trips;
+  const list = trips.filter(t => t.status !== 'DONE');
+  screen(S.me.family.name, null,
+    h('div', { class: 'row' }, h('div', { class: 'grow' }, h('h1', { text: '가족 여행' }), h('p', { class: 'sub', text: '여행을 만들고 가족 모두 가고 싶은 곳을 보태요.' }))),
+    h('div', { class: 'mt2' }, btn('새 여행 만들기', openCreateTrip, '', 'plus')),
+    list.length ? list.map(tripCard) : h('div', { class: 'card' }, empty('trip', '아직 준비 중인 여행이 없어요.')),
+    trips.some(t => t.status === 'DONE') ? h('p', { class: 'sub mt2', text: '다녀온 여행은 추억 앨범에 모여 있어요.' }) : null);
+  setTabs(true);
+}
+function tripCard(t) {
+  const [label, tone] = STATUS[t.status];
+  const card = h('button', { class: 'card tap', type: 'button' },
+    h('div', { class: 'row' }, h('span', { class: 'chip ' + tone, text: label }), h('span', { class: 'sub', text: fmtDate(t.date) })),
+    h('h2', { class: 'mt', text: t.title }),
+    h('p', { class: 'sub', text: t.destination ? '목적지 · ' + t.destination.name : '목적지를 아직 정하지 않았어요' }),
+    h('div', { class: 'stat' }, h('span', {}, '들르는 곳 ', h('b', { text: String(t.stopCount) })), h('span', {}, '새 제안 ', h('b', { text: String(t.pendingCount) })), t.driver ? h('span', {}, '운전 ', h('b', { text: t.driver.name })) : null));
+  card.onclick = () => showTrip(t.id);
+  return card;
+}
+const placeSearch = (onPick, placeholder = '예: 부산 광안리') => {
+  const q = h('input', { type: 'search', id: 'placeQ', placeholder, enterkeyhint: 'search', maxlength: 80 }), out = h('div');
+  const go = btn('', async () => {
+    if (!q.value.trim()) { q.focus(); return; }
+    out.replaceChildren(h('p', { class: 'sub mt', text: '찾고 있어요…' }));
+    const { places } = await api('/api/places?q=' + encodeURIComponent(q.value.trim()));
+    out.replaceChildren(...(places.length ? places.map(p => { const b = h('button', { class: 'card tap', type: 'button' }, h('strong', { text: p.name }), h('p', { class: 'sub', text: p.address || '' })); b.onclick = () => onPick(p); return b; }) : [h('p', { class: 'sub mt', text: '검색 결과가 없어요. 다른 이름으로 찾아보세요.' })]));
+  }, 'small', 'search');
+  go.setAttribute('aria-label', '장소 검색'); go.style.minHeight = '54px';
+  q.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go.click(); } });
+  return h('div', {}, h('div', { class: 'row' }, h('div', { class: 'grow' }, q), go), out);
+};
+function memberSelect(id, selected) {
+  return h('select', { id }, h('option', { value: '', text: '아직 정하지 않음' }), ...S.me.family.members.map(m => h('option', { value: m.id, text: m.name + (m.me ? ' (나)' : ''), selected: m.id === selected })));
+}
+function openCreateTrip() {
+  let destination = null;
+  openSheet('새 여행 만들기', body => {
+    const title = h('input', { type: 'text', id: 'tripTitle', maxlength: 40, placeholder: '예: 부산 가족 여행' });
+    const date = h('input', { type: 'date', id: 'tripDate' });
+    const driver = memberSelect('tripDriver', S.me.user.id);
+    const destBox = h('div');
+    const paintDest = () => destBox.replaceChildren(destination ? h('div', { class: 'card' }, h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', { text: destination.name }), h('p', { class: 'sub', text: destination.address })), h('button', { class: 'link', type: 'button', text: '바꾸기', onclick: () => { destination = null; paintDest(); } }))) : placeSearch(p => { destination = p; paintDest(); }, '예: 부산역 (나중에 정해도 돼요)'));
+    paintDest();
+    body.append(h('label', { for: 'tripTitle', text: '여행 이름' }), title, h('label', { for: 'tripDate', text: '날짜' }), date,
+      h('label', { for: 'tripDriver', text: '운전자' }), driver, h('label', { text: '목적지' }), destBox,
+      h('p', { class: 'sub mt', text: '출발지는 시연 단계라 서울로 정해져 있어요.' }),
+      h('div', { class: 'mt2' }, btn('여행 만들기', async () => {
+        if (!title.value.trim()) { title.focus(); throw Error('여행 이름을 적어 주세요.'); }
+        const trip = await api('/api/trips', { data: { title: title.value, date: date.value || null, driverUserId: driver.value || null, destination } });
+        closeSheet(); toast('여행을 만들었어요. 가족에게 장소 제안을 받아 보세요.'); showTrip(trip.id);
+      })));
+  });
+}
+
+// ───────── ③④⑤ 여행 상세: 장소 제안 · 길 안내 · 사진 ─────────
+async function showTrip(id, tab) {
+  S.view = 'trip'; if (tab) S.tripTab = tab;
+  setTabs(true);
+  S.trip = await api('/api/trips/' + id);
+  if (S.trip.status === 'DONE' && !tab) S.tripTab = 'memory';
+  renderTrip();
+  clearInterval(pollTimer);
+  // 가족이 다른 기기에서 바꾼 내용을 4초마다 반영한다. 글을 쓰는 중에는 다시 그리지 않는다.
+  pollTimer = setInterval(async () => {
+    if (document.hidden || $('sheet').open || S.view !== 'trip') return;
+    try { const next = await api('/api/trips/' + id); if (JSON.stringify(next) !== JSON.stringify(S.trip)) { S.trip = next; renderTrip(true); } } catch {}
+  }, 4000);
+}
+function renderTrip(keepScroll) {
+  const t = S.trip, y = window.scrollY, [label, tone] = STATUS[t.status];
+  const tabs = t.status === 'DONE' ? [['memory', '추억'], ['photos', '사진']] : [['ideas', '장소 제안'], ['route', '길 안내'], ['photos', '사진']];
+  if (!tabs.some(([k]) => k === S.tripTab)) S.tripTab = tabs[0][0];
+  const seg = h('div', { class: 'seg', role: 'tablist' }, ...tabs.map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(S.tripTab === k), text: l, onclick: () => { S.tripTab = k; renderTrip(); } })));
+  const body = S.tripTab === 'ideas' ? ideasView(t) : S.tripTab === 'route' ? routeView(t) : S.tripTab === 'memory' ? memoryView(t) : photosView(t);
+  screen(t.title, () => { S.view = null; go(t.status === 'DONE' ? 'album' : 'trips'); },
+    h('div', { class: 'row' }, h('span', { class: 'chip ' + tone, text: label }), h('span', { class: 'sub', text: fmtDate(t.date) + (t.driver ? ' · 운전 ' + t.driver.name : '') })),
+    h('p', { class: 'sub mt', text: (t.destination ? '서울 출발 → ' + t.destination.name : '목적지를 아직 정하지 않았어요') + (t.route ? ' · ' + km(t.route.distance) + ', 약 ' + mins(t.route.duration) : '') }),
+    t.routeError ? h('p', { class: 'note warn', text: t.routeError }) : null,
+    t.canManage && t.status !== 'DONE' ? h('div', { class: 'row mt' }, h('button', { class: 'link', type: 'button', text: '여행 정보 바꾸기', onclick: openEditTrip })) : null,
+    seg, body);
+  if (keepScroll) window.scrollTo(0, y);
+}
+const reload = async (detail) => { S.trip = detail || await api('/api/trips/' + S.trip.id); renderTrip(true); };
+
+// ④ 장소 제안
+function ideasView(t) {
+  const pending = t.proposals.filter(p => p.status === 'PROPOSED'), done = t.proposals.filter(p => p.status !== 'PROPOSED');
+  return h('div', {},
+    h('div', { class: 'mt2' }, btn('가고 싶은 곳 제안하기', openPropose, '', 'plus')),
+    h('div', { class: 'section-title' }, h('h2', { text: '기다리는 제안 ' + pending.length })),
+    pending.length ? pending.map(p => proposalCard(p, t)) : h('div', { class: 'card' }, empty('trip', '가족이 가고 싶은 곳을 아직 제안하지 않았어요.')),
+    t.stops.length ? [h('div', { class: 'section-title' }, h('h2', { text: '경로에 담긴 곳 ' + t.stops.length })), t.stops.map(p => proposalCard(p, t))] : null,
+    done.length ? [h('div', { class: 'section-title' }, h('h2', { text: '지난 제안' })), done.map(p => proposalCard(p, t))] : null);
+}
+const P_STATUS = { PROPOSED: ['운전자 결정 기다림', 'warn'], CONFIRMED: ['경로에 담김', 'ok'], VISITED: ['다녀옴', 'ok'], DECLINED: ['이번엔 안 가요', 'gray'], REPLACED: ['목적지가 바뀜', 'gray'] };
+function proposalCard(p, t) {
+  const [label, tone] = P_STATUS[p.status];
+  const card = h('div', { class: 'card' },
+    h('div', { class: 'row wrapx' }, h('span', { class: 'chip ' + tone, text: label }), p.kind === 'DESTINATION' ? h('span', { class: 'chip', text: '목적지 제안' }) : null, h('span', { class: 'sub', text: p.by.name + '님' })),
+    h('h3', { class: 'mt', text: p.place.name }), p.place.address ? h('p', { class: 'sub', text: p.place.address }) : null,
+    p.reason ? h('div', { class: 'quote' }, h('b', { text: '가고 싶은 이유 · ' }), p.reason) : null,
+    p.message ? h('div', { class: 'quote' }, h('b', { text: '가족에게 · ' }), p.message) : null);
+  if (p.status === 'PROPOSED') {
+    const vote = c => async () => reload(await api('/api/proposals/' + p.id + '/vote', { data: { choice: p.myVote === c ? 'NONE' : c } }));
+    card.append(h('div', { class: 'row mt' }, btn('좋아요 ' + (p.yes || ''), vote('YES'), p.myVote === 'YES' ? '' : 'line'), btn('글쎄요 ' + (p.no || ''), vote('NO'), p.myVote === 'NO' ? '' : 'line')));
+    if (t.canManage) card.append(h('div', { class: 'row mt' },
+      btn(p.kind === 'DESTINATION' ? '목적지로 정하기' : '경로에 담기', async () => { await reload(await api('/api/proposals/' + p.id + '/decide', { data: { decision: 'CONFIRM' } })); toast(eul(p.place.name) + ' 경로에 담았어요.'); }, 'soft'),
+      btn('이번엔 안 가요', async () => reload(await api('/api/proposals/' + p.id + '/decide', { data: { decision: 'DECLINE' } })), 'line')));
+  }
+  if (p.canDelete && t.status !== 'DONE') card.append(h('div', { class: 'mt' }, h('button', { class: 'link', type: 'button', text: p.status === 'CONFIRMED' ? '경로에서 빼기' : '제안 지우기', onclick: async () => { if (await confirmSheet('제안 지우기', eul(p.place.name) + ' 지울까요?', '지우기', true)) { try { await reload(await api('/api/proposals/' + p.id, { method: 'DELETE' })); } catch (e) { toast(e.message, true); } } } })));
+  return card;
+}
+function openPropose() {
+  openSheet('가고 싶은 곳 제안', body => {
+    const pick = place => {
+      body.replaceChildren();
+      const reason = h('textarea', { id: 'reason', maxlength: 200, placeholder: '예: 바다를 보며 쉬고 싶어요' });
+      const message = h('textarea', { id: 'message', maxlength: 300, placeholder: '예: 할머니랑 같이 사진 찍어요!' });
+      let kind = 'STOP';
+      const kinds = h('div', {}, ...[['STOP', '가는 길에 들르기'], ['DESTINATION', '여기를 목적지로']].map(([v, l]) => { const r = h('input', { type: 'radio', name: 'kind', value: v, checked: v === 'STOP' }); r.onchange = () => { kind = v; }; return h('label', { class: 'radio' }, r, l); }));
+      body.append(h('div', { class: 'card' }, h('strong', { text: place.name }), h('p', { class: 'sub', text: place.address })), kinds,
+        h('label', { for: 'reason', text: '가고 싶은 이유' }), reason, h('label', { for: 'message', text: '가족에게 남길 말 (그곳에 도착하면 보여요)' }), message,
+        h('div', { class: 'mt2' }, btn('가족에게 제안하기', async () => { await reload(await api('/api/trips/' + S.trip.id + '/proposals', { data: { place, reason: reason.value, message: message.value, kind } })); closeSheet(); toast(eul(place.name) + ' 제안했어요.'); })));
+    };
+    body.append(h('p', { class: 'sub', text: '장소를 찾아 고른 뒤, 가고 싶은 이유와 가족에게 남길 말을 적어 주세요.' }), h('div', { class: 'mt' }, placeSearch(pick)));
+  });
+}
+
+// ⑤ 길 안내(경로와 진행 상황)
+function routeView(t) {
+  const list = h('ol', { class: 'steps' }, h('li', {}, h('span', { class: 'dot start', text: '출' }), h('div', { class: 'grow' }, h('strong', { text: t.origin.name }))));
+  t.stops.forEach((p, i) => {
+    const row = h('li', {}, h('span', { class: 'dot ' + (p.status === 'VISITED' ? 'done' : ''), text: p.status === 'VISITED' ? '✓' : String(i + 1) }),
+      h('div', { class: 'grow' }, h('strong', { text: p.place.name }), h('p', { class: 'sub', text: p.by.name + '님 제안' + (p.status === 'VISITED' ? ' · 다녀왔어요' : '') })));
+    if (t.canManage && t.status === 'PLANNING') row.append(h('div', { class: 'row' },
+      i > 0 ? h('button', { class: 'btn small line', type: 'button', text: '위로', onclick: () => reorder(i, -1) }) : null,
+      i < t.stops.length - 1 ? h('button', { class: 'btn small line', type: 'button', text: '아래로', onclick: () => reorder(i, 1) }) : null));
+    if (t.canManage && t.status === 'ONGOING' && p.status !== 'VISITED') row.append(btn('도착', () => arrive(p), 'small soft'));
+    list.append(row);
+  });
+  list.append(h('li', {}, h('span', { class: 'dot end' }, svg('flag')), h('div', { class: 'grow' }, h('strong', { text: t.destination ? t.destination.name : '목적지 미정' }), h('p', { class: 'sub', text: '도착지' }))));
+  const actions = [];
+  if (t.canManage && t.status === 'PLANNING') actions.push(t.destination ? btn('출발하기', async () => { await reload(await api('/api/trips/' + t.id + '/start', { data: {} })); toast('출발했어요. 들르는 곳에 도착하면 "도착"을 눌러 가족의 이야기를 확인해요.'); }) : h('p', { class: 'note warn', text: '목적지를 정하면 출발할 수 있어요.' }));
+  if (t.canManage && t.status === 'ONGOING') actions.push(btn('여행 마치기', async () => { if (!await confirmSheet('여행 마치기', '여행을 마치면 추억 앨범으로 옮겨져요. 사진은 나중에도 올릴 수 있어요.', '여행 마치기')) return; await reload(await api('/api/trips/' + t.id + '/finish', { data: {} })); S.tripTab = 'memory'; renderTrip(); toast('여행을 마쳤어요. 추억 앨범에 담겼어요.'); }, 'soft'));
+  return h('div', {}, h('div', { class: 'card' }, h('h2', { text: '우리 길' }), list),
+    t.status === 'ONGOING' ? h('p', { class: 'note', text: '실제 길 안내는 연결된 차량 화면에서 해요. 운전 중에는 휴대폰을 만지지 말고, 정차한 뒤 확인해 주세요.' }) : h('p', { class: 'note', text: '경로는 시연 출발지(서울) 기준이에요. 실시간 차량 위치는 아직 반영하지 않아요.' }),
+    actions.length ? h('div', { class: 'mt' }, ...actions) : null);
+}
+async function reorder(i, d) { const ids = S.trip.stops.map(p => p.id); [ids[i], ids[i + d]] = [ids[i + d], ids[i]]; try { await reload(await api('/api/trips/' + S.trip.id + '/order', { data: { ids, version: S.trip.route?.version } })); } catch (e) { toast(e.message, true); await reload(); } }
+async function arrive(p) {
+  const r = await api('/api/proposals/' + p.id + '/arrive', { data: {} });
+  await reload(r.trip);
+  openSheet(r.place.name + '에 도착했어요', body => body.append(
+    ...(r.stories.length ? r.stories.map(s => h('div', { class: 'card' }, h('strong', { text: s.by + '님의 이야기' }), s.reason ? h('div', { class: 'quote' }, h('b', { text: '가고 싶었던 이유 · ' }), s.reason) : null, s.message ? h('div', { class: 'quote' }, h('b', { text: '가족에게 · ' }), s.message) : null)) : [h('p', { class: 'sub', text: '남겨진 이야기가 없어요.' })]),
+    h('div', { class: 'mt2' }, btn('여기서 사진 올리기', () => { closeSheet(); pickPhotos(p.id); }, 'soft'))));
+}
+
+// 사진
+const photoCache = new Map();
+function photoSrc(id) { if (!photoCache.has(id)) photoCache.set(id, api('/api/photos/' + id).then(r => 'data:image/jpeg;base64,' + r.data).catch(e => { photoCache.delete(id); throw e; })); return photoCache.get(id); }
+function photoGrid(photos, proposalId = null) {
+  const grid = h('div', { class: 'photos' });
+  for (const ph of photos) {
+    const cell = h('button', { type: 'button', 'aria-label': ph.by.name + '님 사진 크게 보기' }, '…');
+    photoSrc(ph.id).then(src => cell.replaceChildren(h('img', { src, alt: ph.by.name + '님이 올린 사진', loading: 'lazy' }))).catch(() => { cell.textContent = '불러오지 못함'; });
+    cell.onclick = () => openViewer(ph); grid.append(cell);
+  }
+  grid.append(h('button', { type: 'button', class: 'add', onclick: () => pickPhotos(proposalId) }, svg('plus'), '사진 올리기'));
+  return grid;
+}
+function photosView(t) { return h('div', { class: 'card' }, h('h2', { text: '여행 사진 ' + t.photos.length }), h('p', { class: 'sub', text: '우리 가족만 볼 수 있어요.' }), photoGrid(t.photos)); }
+const fileInput = h('input', { type: 'file', accept: 'image/jpeg,image/png,image/webp', multiple: true, hidden: true }); document.body.append(fileInput);
+let photoTarget = null;
+function pickPhotos(proposalId) { photoTarget = proposalId; fileInput.click(); }
+async function compress(file) {
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw Error('JPG, PNG, WEBP 사진만 올릴 수 있어요.');
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image(); img.src = url; try { await img.decode(); } catch { throw Error('이 사진은 열 수 없어요.'); }
+    const scale = Math.min(1, 1100 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * scale); c.height = Math.round(img.naturalHeight * scale); c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    for (const q of [0.75, 0.55, 0.4]) { const d = c.toDataURL('image/jpeg', q).split(',')[1]; if (d.length <= 330000) return d; }
+    throw Error('사진이 너무 커요.');
+  } finally { URL.revokeObjectURL(url); }
+}
+fileInput.onchange = async () => {
+  const files = [...fileInput.files]; fileInput.value = ''; let ok = 0, last = '';
+  for (const [i, f] of files.entries()) { toast('사진 올리는 중 ' + (i + 1) + '/' + files.length); try { await api('/api/trips/' + S.trip.id + '/photos', { data: { data: await compress(f), proposalId: photoTarget }, big: true }); ok++; } catch (e) { last = e.message; } }
+  await reload(); toast(ok === files.length ? '사진 ' + ok + '장을 올렸어요.' : '사진 ' + ok + '장을 올렸고 ' + (files.length - ok) + '장은 못 올렸어요. ' + last, ok !== files.length);
+};
+function openViewer(ph) {
+  $('viewerImg').removeAttribute('src'); photoSrc(ph.id).then(s => { $('viewerImg').src = s; }).catch(() => {});
+  $('viewerWho').textContent = ph.by.name + '님 · ' + fmtDay(ph.createdAt);
+  const del = $('viewerDel'); del.hidden = !ph.canDelete; del.textContent = '삭제'; let armed = false;
+  del.onclick = async () => { if (!armed) { armed = true; del.textContent = '한 번 더 누르면 삭제'; return; } try { await api('/api/photos/' + ph.id, { method: 'DELETE' }); photoCache.delete(ph.id); $('viewer').close(); await reload(); toast('사진을 지웠어요.'); } catch (e) { toast(e.message, true); } };
+  $('viewer').showModal();
+}
+$('viewerClose').onclick = () => $('viewer').close();
+
+function openEditTrip() {
+  const t = S.trip;
+  openSheet('여행 정보 바꾸기', body => {
+    const title = h('input', { type: 'text', id: 'editTitle', maxlength: 40, value: t.title }), date = h('input', { type: 'date', id: 'editDate', value: t.date || '' }), driver = memberSelect('editDriver', t.driver?.id);
+    let destination; const destBox = h('div');
+    const paint = () => destBox.replaceChildren(h('div', { class: 'card' }, h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', { text: (destination || t.destination)?.name || '목적지 미정' })), h('button', { class: 'link', type: 'button', text: '바꾸기', onclick: () => destBox.replaceChildren(placeSearch(p => { destination = p; paint(); })) }))));
+    paint();
+    body.append(h('label', { for: 'editTitle', text: '여행 이름' }), title, h('label', { for: 'editDate', text: '날짜' }), date, h('label', { for: 'editDriver', text: '운전자' }), driver, h('label', { text: '목적지' }), destBox,
+      h('div', { class: 'mt2' }, btn('저장', async () => { const data = { title: title.value, date: date.value || null, driverUserId: driver.value || null }; if (destination) data.destination = destination; await reload(await api('/api/trips/' + t.id + '/update', { data })); closeSheet(); toast('여행 정보를 바꿨어요.'); })),
+      h('div', { class: 'mt2' }, btn('이 여행 지우기', async () => { if (!await confirmSheet('여행 지우기', '"' + t.title + '" 여행과 그 안의 제안·사진을 모두 지워요. 되돌릴 수 없어요.', '지우기', true)) return; await api('/api/trips/' + t.id, { method: 'DELETE' }); toast('여행을 지웠어요.'); go('trips'); }, 'danger')));
+  });
+}
+
+// ───────── ⑥ 추억 앨범 ─────────
+async function showAlbum() {
+  setTabs(true);
+  const { trips } = await api('/api/album'); S.album = trips;
+  screen('추억 앨범', null, h('h1', { text: '추억 앨범' }), h('p', { class: 'sub', text: '다녀온 여행의 길, 가족의 이야기, 사진을 모아 둬요.' }),
+    trips.length ? trips.map(t => {
+      const cover = h('div', { style: 'aspect-ratio:16/9;border-radius:14px;background:var(--soft);overflow:hidden;display:grid;place-items:center;color:var(--sub);margin-bottom:12px' }, t.coverPhotoId ? '' : svg('album', 'style="width:44px;height:44px"'));
+      if (t.coverPhotoId) photoSrc(t.coverPhotoId).then(src => cover.replaceChildren(h('img', { src, alt: '', style: 'width:100%;height:100%;object-fit:cover' }))).catch(() => {});
+      const card = h('button', { class: 'card tap', type: 'button' }, cover, h('h2', { text: t.title }), h('p', { class: 'sub', text: fmtDay(t.finishedAt) + (t.destination ? ' · ' + t.destination.name : '') }),
+        h('div', { class: 'stat' }, h('span', {}, '다녀온 곳 ', h('b', { text: String(t.visitedCount) })), h('span', {}, '이야기 ', h('b', { text: String(t.storyCount) })), h('span', {}, '사진 ', h('b', { text: String(t.photoCount) }))));
+      card.onclick = () => showTrip(t.id, 'memory'); return card;
+    }) : h('div', { class: 'card' }, empty('album', '아직 다녀온 여행이 없어요. 여행을 마치면 여기에 모여요.')));
+}
+function memoryView(t) {
+  const visited = t.stops.filter(p => p.status === 'VISITED'), missed = t.stops.filter(p => p.status !== 'VISITED');
+  const stopCard = p => h('div', { class: 'card' }, h('div', { class: 'row' }, h('span', { class: 'chip ' + (p.status === 'VISITED' ? 'ok' : 'gray'), text: p.status === 'VISITED' ? '다녀옴' : '들르지 못함' }), p.visitedAt ? h('span', { class: 'sub', text: new Date(p.visitedAt).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) }) : null),
+    h('h3', { class: 'mt', text: p.place.name }), h('p', { class: 'sub', text: p.by.name + '님이 제안했어요' }),
+    p.reason ? h('div', { class: 'quote' }, h('b', { text: '가고 싶었던 이유 · ' }), p.reason) : null, p.message ? h('div', { class: 'quote' }, h('b', { text: '가족에게 · ' }), p.message) : null,
+    photoGrid(t.photos.filter(ph => ph.proposalId === p.id), p.id));
+  return h('div', {}, h('p', { class: 'sub mt', text: (t.finishedAt ? fmtDay(t.finishedAt) + '에 마친 여행' : '') }),
+    visited.map(stopCard), missed.length ? [h('div', { class: 'section-title' }, h('h2', { text: '이번엔 들르지 못한 곳' })), missed.map(stopCard)] : null,
+    h('div', { class: 'card' }, h('h2', { text: '도착지 · ' + (t.destination?.name || '') }), h('p', { class: 'sub', text: '여행 전체 사진' }), photoGrid(t.photos.filter(ph => !ph.proposalId))));
+}
+
+// ───────── ② 우리 가족 ─────────
+async function showFamily() {
+  setTabs(true);
+  S.me = await api('/api/me');
+  if (!S.me.family) return showNoFamily();
+  const f = S.me.family, admin = f.myRole === 'ADMIN';
+  const members = f.members.map(m => {
+    const row = h('div', { class: 'item' }, h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', { text: m.name + (m.me ? ' (나)' : '') }), h('p', { class: 'sub', text: fmtDay(m.joinedAt) + ' 참여' })), m.role === 'ADMIN' ? h('span', { class: 'chip', text: '관리자' }) : null));
+    if (admin && !m.me) row.append(h('div', { class: 'row mt' },
+      btn('관리자 넘기기', async () => { if (!await confirmSheet('관리자 넘기기', m.name + '님이 관리자가 되고, 나는 일반 구성원이 돼요.', '넘기기')) return; await api('/api/family/members/' + m.id + '/admin', { data: {} }); toast(m.name + '님이 관리자가 됐어요.'); showFamily(); }, 'small line'),
+      btn('내보내기', async () => { if (!await confirmSheet('가족에서 내보내기', m.name + '님은 바로 우리 가족의 여행·사진을 볼 수 없게 돼요. ' + m.name + '님이 올린 제안과 사진은 가족 기록에 남아요.', '내보내기', true)) return; await api('/api/family/members/' + m.id + '/remove', { data: {} }); toast(m.name + '님을 내보냈어요.'); showFamily(); }, 'small danger')));
+    return row;
+  });
+  const vehicles = f.vehicles.map(v => h('div', { class: 'item' }, h('div', { class: 'row' }, h('div', { class: 'grow' }, h('strong', { text: v.name }), h('p', { class: 'sub', text: fmtDay(v.pairedAt) + ' 연결' })),
+    admin ? btn('연결 끊기', async () => { if (!await confirmSheet('차량 연결 끊기', v.name + ' 차량은 바로 우리 가족 여행을 볼 수 없게 돼요.', '연결 끊기', true)) return; await api('/api/family/vehicles/' + v.id, { method: 'DELETE' }); toast('차량 연결을 끊었어요.'); showFamily(); }, 'small line') : null)));
+  screen('우리 가족', null,
+    h('h1', { text: f.name }), h('p', { class: 'sub', text: f.members.length + '명 · ' + (admin ? '내가 관리자예요' : '관리자: ' + (f.members.find(m => m.role === 'ADMIN')?.name || '')) }),
+    h('div', { class: 'card' }, h('h2', { text: '가족 구성원' }), h('div', { class: 'mt' }, ...members), h('div', { class: 'mt' }, btn('가족 초대하기', openInvite, '', 'share'))),
+    h('div', { class: 'card' }, h('h2', { text: '차량' }), vehicles.length ? h('div', { class: 'mt' }, ...vehicles) : h('p', { class: 'sub mt', text: '연결된 차량이 없어요.' }), h('div', { class: 'mt' }, btn('차량 연결 코드 받기', openVehicleCode, 'soft', 'car'))),
+    admin ? h('div', { class: 'card' }, h('h2', { text: '가족 이름' }), h('div', { class: 'mt' }, btn('가족 이름 바꾸기', openRename, 'line'))) : null,
+    accountCard(),
+    h('div', { class: 'card' }, h('h2', { text: '가족에서 나가기' }), h('p', { class: 'sub mt', text: '나가면 이 가족의 여행·사진을 더 볼 수 없어요. 다시 들어오려면 새 초대가 필요해요.' }), h('div', { class: 'mt' }, btn('가족에서 나가기', openLeave, 'danger'))));
+}
+function accountCard() {
+  return h('div', { class: 'card' }, h('h2', { text: '내 계정' }), h('p', { class: 'sub mt', text: S.me.user.name + ' · ' + S.me.user.email }),
+    h('div', { class: 'mt' }, btn('로그아웃', async () => { try { await api('/api/auth/logout', { data: {} }); } catch {} location.replace('/'); }, 'line')));
+}
+async function openInvite() {
+  const { code, expiresAt } = await api('/api/family/invite', { data: {} });
+  const link = location.origin + '/?invite=' + code;
+  openSheet('가족 초대하기', body => body.append(
+    h('p', { class: 'sub', text: '아래 링크를 가족에게 보내거나, 가족이 가입한 뒤 "초대 코드로 참여"에 코드를 적으면 돼요.' }),
+    h('div', { class: 'card', style: 'text-align:center' }, h('p', { class: 'sub', text: '초대 코드' }), h('p', { style: 'font:800 30px/1.3 ui-monospace,Consolas,monospace;letter-spacing:.12em;margin-top:6px', text: code.slice(0, 4) + ' ' + code.slice(4) }), h('p', { class: 'sub mt', text: fmtDay(expiresAt) + '까지 쓸 수 있어요' })),
+    h('div', { class: 'mt2' }, btn('초대 링크 보내기', async () => { if (navigator.share) { try { await navigator.share({ title: '아빠어디가 가족 초대', text: S.me.family.name + '에 함께해요', url: link }); } catch {} return; } try { await navigator.clipboard.writeText(link); toast('초대 링크를 복사했어요.'); } catch { toast('링크: ' + link); } }, '', 'share')),
+    h('p', { class: 'note warn', text: '링크나 코드를 받은 사람은 가입 후 우리 가족에 들어올 수 있어요. 가족에게만 보내 주세요. 새 코드를 받으면 예전 코드는 쓸 수 없어요.' })));
+}
+async function openVehicleCode() {
+  const { code, expiresAt } = await api('/api/family/vehicle-code', { data: {} });
+  openSheet('차량 연결', body => body.append(
+    h('p', { class: 'sub', text: '차량 화면의 "가족 연결"에 이 숫자를 입력해 주세요.' }),
+    h('div', { class: 'card', style: 'text-align:center' }, h('p', { style: 'font:800 40px/1.2 ui-monospace,Consolas,monospace;letter-spacing:.14em', text: code.slice(0, 3) + ' ' + code.slice(3) }), h('p', { class: 'sub mt', text: new Date(expiresAt).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + '까지, 한 번만 쓸 수 있어요' })),
+    h('p', { class: 'note', text: '연결된 차량은 우리 가족의 여행을 보고 길 안내·도착 기록을 할 수 있어요. 우리 가족 화면에서 언제든 연결을 끊을 수 있어요.' })));
+}
+function openRename() {
+  openSheet('가족 이름 바꾸기', body => { const n = h('input', { type: 'text', id: 'rename', maxlength: 30, value: S.me.family.name }); body.append(h('label', { for: 'rename', text: '가족 이름' }), n, h('div', { class: 'mt2' }, btn('저장', async () => { await api('/api/family/rename', { data: { name: n.value } }); closeSheet(); toast('가족 이름을 바꿨어요.'); showFamily(); }))); });
+}
+function openLeave() {
+  const f = S.me.family, admin = f.myRole === 'ADMIN', others = f.members.filter(m => !m.me), last = !others.length;
+  openSheet('가족에서 나가기', body => {
+    let transferTo = others[0]?.id || null;
+    const del = h('input', { type: 'checkbox', id: 'delPhotos' });
+    body.append(
+      last ? h('p', { class: 'note bad', text: '내가 마지막 구성원이에요. 나가면 "' + f.name + '" 가족과 그 안의 모든 여행·제안·사진·차량 연결이 지워져요. 되돌릴 수 없어요.' })
+        : h('p', { class: 'sub', text: '나가면 이 가족의 여행·사진을 더 볼 수 없어요. 내가 올린 제안은 내 이름과 함께 가족 기록에 남아요.' }),
+      admin && !last ? h('div', { class: 'stack' }, h('label', { text: '관리자를 넘길 가족' }), ...others.map((m, i) => { const r = h('input', { type: 'radio', name: 'to', value: m.id, checked: i === 0 }); r.onchange = () => { transferTo = m.id; }; return h('label', { class: 'radio' }, r, m.name); })) : null,
+      !last ? h('label', { class: 'check' }, del, h('span', { text: '내가 올린 사진도 가족 앨범에서 지우고 나가기' })) : null,
+      h('div', { class: 'mt2' }, btn(last ? '가족을 지우고 나가기' : '가족에서 나가기', async () => {
+        const r = await api('/api/family/leave', { data: { transferTo: admin ? transferTo : null, deleteMyPhotos: !last && del.checked } });
+        closeSheet(); toast(r.familyDeleted ? '가족을 정리하고 나왔어요.' : '가족에서 나왔어요.'); S.tab = 'trips'; boot();
+      }, 'danger')));
+  });
+}
+
+// ───────── 시작 ─────────
+// 예전 버전이 이 기기에 남긴 가족방 출입 정보(토큰·방 목록)를 지운다. 새 버전은 기기에 가족 자료를 저장하지 않는다.
+try { for (const k of Object.keys(localStorage)) if (k.startsWith('family-route') || k.startsWith('family-oauth')) localStorage.removeItem(k); } catch {}
+try { for (const k of Object.keys(sessionStorage)) if (k.startsWith('family-route') || k.startsWith('family-oauth') || k.startsWith('family-after')) sessionStorage.removeItem(k); } catch {}
+try { indexedDB.deleteDatabase('family-route-room-history'); } catch {}
+document.addEventListener('visibilitychange', () => { if (!document.hidden && S.me && S.view === 'trip' && S.trip) api('/api/trips/' + S.trip.id).then(t => { S.trip = t; renderTrip(true); }).catch(() => {}); });
+(async () => {
+  try { S.me = await api('/api/me'); } catch { S.me = null; }
+  if (!S.me) return renderAuth(S.pendingInvite ? 'signup' : 'login');
+  boot();
+})();
+</script>
+</body>
+</html>

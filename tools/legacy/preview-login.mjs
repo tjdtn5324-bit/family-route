@@ -4,9 +4,9 @@
 import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 setDefaultAutoSelectFamilyAttemptTimeout(2000);
 import { execFileSync } from 'node:child_process';
-import { createApp } from '../server/app.mjs';
-import { Rooms } from '../server/rooms.mjs';
-import { createIdentityVerifier, createSavedPlaceStore } from '../server/profile.mjs';
+import { createApp } from '../../server/legacy/app.mjs';
+import { Rooms } from '../../server/legacy/rooms.mjs';
+import { createIdentityVerifier, createSavedPlaceStore } from '../../server/legacy/profile.mjs';
 
 const region = 'ap-southeast-2', profileName = 'family-route', tableName = 'family-route-saved-places';
 process.env.AWS_PROFILE = profileName;

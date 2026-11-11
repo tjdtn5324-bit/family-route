@@ -1,21 +1,20 @@
 param(
     [Parameter(Mandatory=$true)][string]$NodePath,
     [Parameter(Mandatory=$true)][string]$TunnelPath,
-    [string]$AccountConfigPath = (Join-Path (Split-Path -Parent $PSScriptRoot) 'account-config.local.json')
+    # Kept so older startup shortcuts that still pass it keep working; the v2 server does not use it.
+    [string]$AccountConfigPath = ''
 )
 $ErrorActionPreference = 'Stop'
 $project = Split-Path -Parent $PSScriptRoot
 $state = Join-Path $project '.runtime'
 $null = New-Item -ItemType Directory -Path $state -Force
-$env:FAMILY_LOCAL_ARCHIVE_DIR = $state
-$env:FAMILY_ACCOUNT_CONFIG = [IO.Path]::GetFullPath($AccountConfigPath)
+$env:FAMILY_V2_ARCHIVE_DIR = Join-Path $state 'v2-8789'
 $mutex = New-Object System.Threading.Mutex($false, 'Local\AppaEodigaPreviewSupervisor')
 try { $acquired = $mutex.WaitOne(0) } catch [System.Threading.AbandonedMutexException] { $acquired = $true }
 if (!$acquired) { $mutex.Dispose(); return }
 # A quick tunnel can lose its address on the Cloudflare side while the process keeps running ("Tunnel not found").
 # Check that the server reaches itself through the tunnel; restart the tunnel after about a minute of failures.
 $deadChecks = 0
-$accountOriginAttempted = ''
 try {
     while ($true) {
         try {
@@ -32,17 +31,8 @@ try {
                     if ($tunnel) {
                         $origin = ''
                         try { $origin = (Invoke-RestMethod -Uri 'http://127.0.0.1:8789/api/invite-origin' -TimeoutSec 10).origin } catch {}
-                        if ($origin) {
-                            $deadChecks = 0
-                            if ($origin -ne $accountOriginAttempted) {
-                                $accountOriginAttempted = $origin
-                                try {
-                                    & (Join-Path $PSScriptRoot 'sync-account-origin.ps1') -Origin $origin | Out-Null
-                                } catch {
-                                    $_.Exception.Message | Set-Content (Join-Path $state 'account-login-status.log')
-                                }
-                            }
-                        } else { $deadChecks++ }
+                        # The v2 app has its own accounts, so the tunnel address no longer has to be registered with AWS Cognito.
+                        if ($origin) { $deadChecks = 0 } else { $deadChecks++ }
                         $age = (Get-Date) - ($tunnel | Select-Object -First 1).CreationDate
                         if ($deadChecks -ge 3 -and $age.TotalSeconds -gt 90) {
                             $tunnel | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }

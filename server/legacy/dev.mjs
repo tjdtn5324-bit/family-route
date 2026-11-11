@@ -3,7 +3,7 @@ import { setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 setDefaultAutoSelectFamilyAttemptTimeout(2000);
 import { createApp } from './app.mjs';
 import { Rooms } from './rooms.mjs';
-import { openLocalArchive } from './local-persistence.mjs';
+import { openLocalArchive } from '../local-persistence.mjs';
 import { createIdentityVerifier, createSavedPlaceStore } from './profile.mjs';
 const port = Number(process.env.PORT || 8788);
 const { COGNITO_USER_POOL_ID: pool, COGNITO_CLIENT_ID: clientId, COGNITO_AUTH_DOMAIN: domain, SAVED_PLACES_TABLE: table } = process.env;

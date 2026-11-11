@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { createIdentityVerifier, createSavedPlaceStore } from '../server/profile.mjs';
+import { createIdentityVerifier, createSavedPlaceStore } from '../../server/legacy/profile.mjs';
 
 export function loadAccountConfig({ environment = process.env, read = readFileSync } = {}) {
   const path = environment.FAMILY_ACCOUNT_CONFIG || join(environment.LOCALAPPDATA || homedir(), 'AppaEodiga', 'account-config.json');

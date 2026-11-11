@@ -2,8 +2,8 @@ import http from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Rooms } from './rooms.mjs';
-import { searchPlaces } from './place-search.mjs';
-import { getDirections } from './directions.mjs';
+import { searchPlaces } from '../place-search.mjs';
+import { getDirections } from '../directions.mjs';
 
 // 로컬 개발용. 인터넷 공개 전에 영속 저장, 인증·초대 만료, HTTPS 및 남용 방지가 필요하다.
 export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY_SAMPLE_COURSES === '1'}), apiKey = process.env.KAKAO_REST_API_KEY, createSecret = process.env.ROOM_CREATE_SECRET, search = searchPlaces, directions = getDirections, profile = null, persist = null } = {}) {
@@ -44,11 +44,11 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer' }); res.end(html); return;
       }
       if (req.method === 'GET' && url.pathname === '/assets/busan-illustration.png') {
-        const image = await readFile(new URL('./assets/busan-illustration.png', import.meta.url));
+        const image = await readFile(new URL('../assets/busan-illustration.png', import.meta.url));
         res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' }); res.end(image); return;
       }
       if (req.method === 'GET' && url.pathname === '/assets/appa-eodiga.png') {
-        const image = await readFile(new URL('./assets/appa-eodiga.png', import.meta.url));
+        const image = await readFile(new URL('../assets/appa-eodiga.png', import.meta.url));
         res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'public, max-age=86400', 'X-Content-Type-Options': 'nosniff' }); res.end(image); return;
       }
       const body = async (maxSize = 16384) => {

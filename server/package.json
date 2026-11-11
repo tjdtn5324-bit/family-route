@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test *.test.mjs"
+    "test": "node --test --test-concurrency=1 --test-timeout=30000 *.test.mjs v2/",
+    "test:legacy": "node --test --test-concurrency=1 legacy/",
+    "dev": "node ../tools/preview-phone.mjs 8790"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.1164.0",

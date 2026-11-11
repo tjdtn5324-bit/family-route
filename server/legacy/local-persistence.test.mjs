@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {mkdtempSync,readFileSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {openLocalArchive} from './local-persistence.mjs';
+import {openLocalArchive} from '../local-persistence.mjs';
 import {Rooms} from './rooms.mjs';
 import {createApp} from './app.mjs';
 
