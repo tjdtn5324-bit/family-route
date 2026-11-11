@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes, randomInt, randomUUID } from 'node:crypto';
 import { curatedCourses } from './curated-courses.mjs';
 
 const token = () => randomBytes(24).toString('base64url');
@@ -15,6 +15,11 @@ const PROVINCES = { 경기: '경기', 강원: '강원', 충북: '충북', 충청
 const AMBIGUOUS = new Set(['광주', '고성']);
 const TREND_BADGE_SCORE = 3;
 const RESERVED_NAME = /운영|관리자|공식|현대|기아|가족경로/;
+const MAX_TRIPS = 20, PHOTOS_PER_TRIP = 8;
+
+// 상태 코드가 있는 오류. 서버는 이 값을 그대로 응답 코드로 쓴다(없으면 400).
+export class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
+const fail = (status, message) => { throw new HttpError(status, message); };
 
 // 코스가 속한 지역 이름. 알려진 시·도 주소일 때만 값을 내고, 아니면 빈 문자열이다.
 // 주소는 사용자가 보낸 값이라 아무 글이나 지역 이름으로 화면에 올라가지 않게 한다.
@@ -160,15 +165,17 @@ export class Rooms {
     const invite = [...this.#invites].find(([, id]) => id === member.roomId);
     if (!driver || !invite) throw new Error('가족방을 다시 확인해 주세요');
     for (const [key, value] of this.#pairings) if (value.expiresAt <= Date.now() || value.roomId === member.roomId) this.#pairings.delete(key);
-    const code = randomBytes(5).toString('hex').toUpperCase();
-    this.#pairings.set(code, {roomId:member.roomId, driverToken:driver[0], invite:invite[0], expiresAt:Date.now()+10*60*1000});
-    return {code};
+    // 운전자에게 소리 내어 읽어 주기 쉽도록 숫자 6자리로 만든다. 10분 동안 한 번만 쓸 수 있다.
+    let code; do { code = String(randomInt(0, 1000000)).padStart(6, '0'); } while (this.#pairings.has(code));
+    const expiresAt = Date.now() + 10 * 60 * 1000;
+    this.#pairings.set(code, {roomId:member.roomId, driverToken:driver[0], invite:invite[0], expiresAt});
+    return {code, expiresAt};
   }
 
   claimPairing(code) {
-    const key = typeof code === 'string' ? code.trim().toUpperCase() : '';
+    const key = typeof code === 'string' ? code.replace(/[\s-]/g, '').toUpperCase() : '';
     const pair = this.#pairings.get(key);
-    if (!pair || pair.expiresAt <= Date.now()) { this.#pairings.delete(key); throw new Error('연결 코드를 다시 확인해 주세요'); }
+    if (!pair || pair.expiresAt <= Date.now()) { this.#pairings.delete(key); fail(404, '연결 코드를 다시 확인해 주세요'); }
     this.session(pair.driverToken);
     this.#pairings.delete(key);
     const linked = this.#rooms.get(pair.roomId); if (linked) { linked.carLinkedAt = Date.now(); this.#notify(linked); }
@@ -178,45 +185,95 @@ export class Rooms {
   session(auth) {
     this.#prune();
     const session = this.#sessions.get(auth);
-    if (!session) throw new Error('가족방에 다시 참여해 주세요');
+    if (!session) fail(401, '가족방에 다시 참여해 주세요');
     return session;
   }
 
   state(auth) {
     const s = this.session(auth), room = this.#rooms.get(s.roomId);
-    return { room: { id: room.id, name: room.name, expiresAt: room.expiresAt < 8640000000000000 ? room.expiresAt : null, carLinkedAt: room.carLinkedAt || null }, me: { id: s.id ?? null, name: s.name, role: s.role }, archiveAvailable: this.#permanentMemories, archived: !!room.archived, members: room.members, proposals: room.proposals, route: room.route, completedTrip:room.completedTrip||null, photos:(room.photos||[]).map(({id,memberId,memberName,createdAt})=>({id,memberId,memberName,createdAt})), preferences: structuredClone(room.preferences ?? defaultPreferences()), itinerary: room.route ? { version:room.routeVersion, destination: room.destination, waypoints: this.#waypoints(room).map(p => ({...p.place, proposalId:p.id})) } : null };
+    const trips = this.#tripsOf(room), active = this.#activeTrip(room);
+    const photos = room.photos || [];
+    return { room: { id: room.id, name: room.name, expiresAt: room.expiresAt < 8640000000000000 ? room.expiresAt : null, carLinkedAt: room.carLinkedAt || null }, me: { id: s.id ?? null, name: s.name, role: s.role }, archiveAvailable: this.#permanentMemories, archived: !!room.archived, members: room.members, proposals: room.proposals, route: room.route, completedTrip:room.completedTrip||null,
+      photos: photos.map(({id,memberId,memberName,createdAt,tripId})=>({id,memberId,memberName,createdAt,tripId:tripId||null})),
+      // 가족방 안의 여행 묶음. 최근 여행이 앞에 온다. 사진은 여행별로 나뉜다.
+      currentTripId: active?.id || null,
+      trips: trips.slice().reverse().map(t => ({ id: t.id, status: t.status, title: t.title || (t.destination ? t.destination.name + ' 여행' : '준비 중인 여행'), destination: t.destination || null, waypoints: t.waypoints || [], fromCourse: t.fromCourse || null, startedAt: t.startedAt || null, finishedAt: t.finishedAt || null, choice: t.choice || null, photoCount: photos.filter(p => p.tripId === t.id).length })),
+      preferences: structuredClone(room.preferences ?? defaultPreferences()), itinerary: room.route ? { version:room.routeVersion, destination: room.destination, waypoints: this.#waypoints(room).map(p => ({...p.place, proposalId:p.id})), fromCourse: active?.fromCourse || null } : null };
   }
 
-  addPhoto(auth, data) {
+  // ── 여행 묶음 ──
+  // 예전 저장 데이터에는 trips가 없으므로, 마지막으로 끝낸 여행이 있으면 그것을 첫 묶음으로 삼는다.
+  #tripsOf(room) {
+    if (!Array.isArray(room.trips)) room.trips = room.completedTrip ? [{ ...structuredClone(room.completedTrip), status: 'DONE', startedAt: room.completedTrip.finishedAt }] : [];
+    return room.trips;
+  }
+  #activeTrip(room) { return this.#tripsOf(room).find(t => t.status === 'ACTIVE') || null; }
+  // 경로가 처음 생기면 새 여행 묶음을 연다.
+  #openTrip(room) {
+    let trip = this.#activeTrip(room);
+    if (!trip) {
+      trip = { id: randomUUID(), status: 'ACTIVE', startedAt: Date.now(), fromCourse: null };
+      const trips = this.#tripsOf(room); trips.push(trip);
+      // 오래된 여행은 사진과 함께 정리한다(메모리 보호).
+      while (trips.length > MAX_TRIPS) { const old = trips.shift(); room.photos = (room.photos || []).filter(p => p.tripId !== old.id); }
+    }
+    return trip;
+  }
+  #findTrip(room, tripId) {
+    const trip = this.#tripsOf(room).find(t => t.id === tripId);
+    if (!trip) fail(404, '여행 기록을 찾을 수 없어요');
+    return trip;
+  }
+  /** 추억 저장에 쓰는 여행. tripId가 없으면 마지막으로 끝낸 여행이다. */
+  tripForMemory(auth, tripId) {
+    const s = this.session(auth), room = this.#rooms.get(s.roomId);
+    if (!tripId) return this.completedTrip(auth);
+    const trip = this.#findTrip(room, tripId);
+    if (trip.status !== 'DONE') fail(409, '여행을 마친 뒤에 추억으로 저장할 수 있어요');
+    return structuredClone({ id: trip.id, destination: trip.destination, waypoints: trip.waypoints, finishedAt: trip.finishedAt, fromCourse: trip.fromCourse || null });
+  }
+
+  // tripId를 주면 그 여행 묶음에, 없으면 지금 여행(없으면 '여행 전 사진')에 담는다.
+  addPhoto(auth, data, tripId = null) {
     const s=this.session(auth), room=this.#rooms.get(s.roomId);
-    if(s.role!=='member') throw new Error('가족으로 참여한 뒤 사진을 올려 주세요');
+    if(s.role!=='member') fail(403, '가족으로 참여한 뒤 사진을 올려 주세요');
+    const target = tripId ? this.#findTrip(room, tripId).id : this.#activeTrip(room)?.id || null;
     if(typeof data!=='string' || data.length>350000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw new Error('사진 크기나 형식을 확인해 주세요');
     const bytes=Buffer.from(data,'base64');
     if(bytes.length>250000 || bytes.length<4 || bytes[0]!==0xff || bytes[1]!==0xd8 || bytes[2]!==0xff) throw new Error('사진을 다시 선택해 주세요');
     room.photos ||= [];
-    if(room.photos.length>=8) throw new Error('한 가족방에는 사진 8장까지 올릴 수 있어요');
-    const photo={id:randomUUID(),memberId:s.id,memberName:s.name,createdAt:Date.now(),data};
+    if(room.photos.filter(p => (p.tripId || null) === target).length>=PHOTOS_PER_TRIP) fail(409, '한 여행에는 사진 8장까지 올릴 수 있어요');
+    const photo={id:randomUUID(),memberId:s.id,memberName:s.name,createdAt:Date.now(),data,tripId:target};
     room.photos.push(photo);this.#touch(room);this.#notify(room);
-    return {id:photo.id,memberName:photo.memberName,createdAt:photo.createdAt};
+    return {id:photo.id,memberName:photo.memberName,createdAt:photo.createdAt,tripId:target};
   }
 
   getPhoto(auth,id) {
     const s=this.session(auth), photo=(this.#rooms.get(s.roomId).photos||[]).find(p=>p.id===id);
-    if(!photo) throw new Error('사진을 찾을 수 없어요');
+    if(!photo) fail(404, '사진을 찾을 수 없어요');
     return {data:photo.data,contentType:'image/jpeg'};
   }
 
   deletePhoto(auth,id) {
     const s=this.session(auth),room=this.#rooms.get(s.roomId),photo=(room.photos||[]).find(p=>p.id===id);
-    if(!photo || (s.role!=='driver' && photo.memberId!==s.id)) throw new Error('본인이 올린 사진만 지울 수 있어요');
+    if(!photo) fail(404, '사진을 찾을 수 없어요');
+    if(s.role!=='driver' && photo.memberId!==s.id) fail(403, '본인이 올린 사진만 지울 수 있어요');
     room.photos=room.photos.filter(p=>p.id!==id);this.#notify(room);
   }
 
   finishTrip(auth,choice) {
     const s=this.session(auth),room=this.#rooms.get(s.roomId);
-    if(s.role!=='driver' || !room.route || !room.destination) throw new Error('종료할 여행 경로가 없어요');
-    if(!['MEMORY','SHARE','SKIP'].includes(choice)) throw new Error('여행을 마칠 방법을 선택해 주세요');
-    if (choice !== 'SKIP') room.completedTrip={id:randomUUID(),destination:structuredClone(room.destination),waypoints:this.#waypoints(room).map(p=>structuredClone(p.place)),preferences:structuredClone(room.preferences),finishedAt:Date.now(),choice};
+    if(s.role!=='driver') fail(403, '운전자만 안내를 끝낼 수 있어요');
+    if(!room.route || !room.destination) fail(409, '종료할 여행 경로가 없어요');
+    // REVIEW: 추천받은 코스로 다녀온 여행이라 공유 대신 좋아요·후기를 남긴다.
+    if(!['MEMORY','SHARE','REVIEW','SKIP'].includes(choice)) throw new Error('여행을 마칠 방법을 선택해 주세요');
+    // 지금 여행 묶음을 끝난 여행으로 닫는다. 그냥 끝내도 가족방의 여행 기록에는 남는다.
+    const trip = this.#openTrip(room), now = Date.now();
+    if (trip.fromCourse && choice === 'SHARE') choice = 'REVIEW';
+    Object.assign(trip, { status: 'DONE', title: room.destination.name + ' 여행', destination: structuredClone(room.destination), waypoints: this.#waypoints(room).map(p => structuredClone(p.place)), preferences: structuredClone(room.preferences), finishedAt: now, choice });
+    // 이 기능 전에 올라와 묶음 정보가 없는 사진은 이 여행에 담는다(예전 데이터 호환).
+    for (const p of room.photos || []) if (p.tripId === undefined && p.createdAt >= (trip.startedAt || 0)) p.tripId = trip.id;
+    if (choice !== 'SKIP') room.completedTrip={id:trip.id,destination:trip.destination,waypoints:trip.waypoints,preferences:trip.preferences,finishedAt:now,choice,fromCourse:trip.fromCourse||null};
     if (choice !== 'SKIP' && this.#permanentMemories) { room.expiresAt = 8640000000000000; room.archived = true; }
     // 끝난 여행의 들르는 곳이 다음 여행 경로에 다시 붙지 않게 한다.
     for (const p of room.proposals) if (p.status === 'ACCEPTED' && p.type === 'WAYPOINT') p.status = 'FINISHED';
@@ -230,7 +287,7 @@ export class Rooms {
 
   completedTrip(auth) {
     const s=this.session(auth),trip=this.#rooms.get(s.roomId).completedTrip;
-    if(!trip) throw new Error('먼저 차량에서 안내 종료를 눌러 주세요');
+    if(!trip) fail(409, '먼저 차량에서 안내 종료를 눌러 주세요');
     return structuredClone(trip);
   }
 
@@ -263,12 +320,17 @@ export class Rooms {
   }
 
   // exclude: 공개하지 않을 장소의 순서 번호(0부터, 마지막이 도착지). 집·숙소처럼 알리고 싶지 않은 곳을 뺀다.
-  publishCourse(auth, title, description, source = 'current', exclude = []) {
+  // tripId: 가족방의 여행 묶음 중 공유할 여행. 없으면 source(지금 경로 / 마지막으로 끝낸 여행)를 쓴다.
+  publishCourse(auth, title, description, source = 'current', exclude = [], tripId = null) {
     const s = this.session(auth), room = this.#rooms.get(s.roomId);
     const courseTitle = clean(title, 80);
     if(!['current','completed'].includes(source)) throw new Error('공유할 여행을 다시 확인해 주세요');
-    const trip=source==='completed' ? room.completedTrip : room.route ? {destination:room.destination,waypoints:this.#waypoints(room).map(p=>p.place),preferences:room.preferences} : room.completedTrip;
+    const picked = tripId ? this.#findTrip(room, tripId) : null;
+    if (picked && picked.status !== 'DONE') fail(409, '여행을 마친 뒤에 공유할 수 있어요');
+    const trip = picked || (source==='completed' ? room.completedTrip : room.route ? {destination:room.destination,waypoints:this.#waypoints(room).map(p=>p.place),preferences:room.preferences,fromCourse:this.#activeTrip(room)?.fromCourse} : room.completedTrip);
     if (!courseTitle || !trip) throw new Error('제목과 완성된 가족 경로가 필요합니다');
+    // 남이 올린 코스를 그대로 다시 올리지 않게 한다. 다녀온 코스에는 좋아요나 후기를 남긴다.
+    if (trip.fromCourse) fail(409, '추천받은 코스로 다녀온 여행은 공유하지 않아요. 그 코스에 좋아요나 후기를 남겨 주세요');
     if (!Array.isArray(exclude) || exclude.some(i => !Number.isInteger(i))) throw new Error('공개할 장소를 다시 골라 주세요');
     const places = [...trip.waypoints, trip.destination].filter((_, i) => !exclude.includes(i));
     if (!places.length) throw new Error('공개할 장소를 한 곳 이상 남겨 주세요');
@@ -285,7 +347,8 @@ export class Rooms {
   // 올린 가족방의 사람만 코스를 내릴 수 있다. 좋아요·후기·인기 기록도 함께 지운다.
   unpublishCourse(auth, id) {
     const s = this.session(auth), course = this.#courses.get(id);
-    if (!course || course.sample || course.ownerRoomId !== s.roomId) throw new Error('이 가족방에서 올린 코스만 내릴 수 있어요');
+    if (!course) fail(404, '공유 코스를 찾을 수 없습니다');
+    if (course.sample || course.ownerRoomId !== s.roomId) fail(403, '이 가족방에서 올린 코스만 내릴 수 있어요');
     this.#courses.delete(id); this.#likes.delete(id); this.#reviews.delete(id); this.#activity.delete(id);
   }
 
@@ -356,7 +419,8 @@ export class Rooms {
   // 후기는 계정당 코스별 하나. 다시 쓰면 고쳐진다. 화면에는 이름만 보이고 계정 정보는 내보내지 않는다.
   reviewCourse(userId, id, input) {
     const course = this.#courses.get(id);
-    if (!course || (course.sample && !course.curated)) throw new Error('후기를 남길 수 없는 코스예요');
+    if (!course) fail(404, '공유 코스를 찾을 수 없습니다');
+    if (course.sample && !course.curated) fail(403, '시연 예시 코스에는 후기를 남길 수 없어요');
     const rating = input?.rating, text = clean(input?.text, 300), typed = clean(input?.name, 20);
     const name = !typed || RESERVED_NAME.test(typed) ? '여행자' : typed;
     if (!Number.isInteger(rating) || rating < 1 || rating > 5) throw new Error('별점을 1점부터 5점 사이로 골라 주세요');
@@ -373,15 +437,17 @@ export class Rooms {
   }
   courseReviews(id, userId = null) {
     const course = this.#courses.get(id);
-    if (!course) throw new Error('공유 코스를 찾을 수 없습니다');
+    if (!course) fail(404, '공유 코스를 찾을 수 없습니다');
     const entries = [...(this.#reviews.get(id) || [])].sort((a, b) => b[1].updatedAt - a[1].updatedAt);
     const summary = this.#summary(course);
     return { rating: summary.rating, count: summary.reviewCount, reviews: entries.map(([user, r]) => ({ name: r.name, rating: r.rating, text: r.text, createdAt: r.createdAt, mine: userId !== null && user === userId })) };
   }
 
+  // 가족이 공유한 코스와 관광 안내를 참고한 코스에 좋아요를 누를 수 있다(시연용 예시 코스는 제외).
   setCourseLike(userId,id,liked) {
     const course=this.#courses.get(id);
-    if(!course || course.sample) throw new Error('좋아요를 누를 수 없는 코스예요');
+    if(!course) fail(404, '공유 코스를 찾을 수 없습니다');
+    if(course.sample && !course.curated) fail(403, '시연 예시 코스에는 좋아요를 누를 수 없어요');
     if(typeof liked!=='boolean') throw new Error('좋아요 상태를 확인해 주세요');
     let likes=this.#likes.get(id);if(!likes){likes=new Set();this.#likes.set(id,likes)}
     if(liked && !likes.has(userId) && likes.size>=1000) throw new Error('좋아요 한도에 도달했어요');
@@ -421,6 +487,8 @@ export class Rooms {
     const s = this.session(auth), room = this.#rooms.get(s.roomId);
     if (s.role !== 'driver' || room.routeVersion !== version) throw new Error('경로가 변경됐어요. 다시 시도해 주세요');
     for (const p of room.proposals) if (p.status === 'ACCEPTED' && p.type === 'WAYPOINT') p.status = 'REPLACED';
+    // 새 목적지를 직접 정하면 추천 코스와는 다른 여행이 된다.
+    this.#openTrip(room).fromCourse = null;
     this.#touch(room);
     room.destination = destination; room.route = { ...route, destinationName: destination.name }; room.routeVersion++; this.#notify(room);
   }
@@ -442,7 +510,7 @@ export class Rooms {
 
   proposeCourse(auth, id, allowDriver = false) {
     const course = this.#courses.get(id);
-    if (!course) throw new Error('공유 코스를 찾을 수 없습니다');
+    if (!course) fail(404, '공유 코스를 찾을 수 없습니다');
     const proposal = this.propose(auth, course.destination, course.title, 'DESTINATION', allowDriver);
     proposal.type = 'COURSE';
     proposal.course = structuredClone({ id: course.id, title: course.title, destination: course.destination, waypoints: course.waypoints, mode: 'ADD' });
@@ -509,8 +577,14 @@ export class Rooms {
         room.proposals.push({ id: randomUUID(), type: 'WAYPOINT', member: proposal.member, place, message: proposal.course.title, status: 'ACCEPTED', waypointOrder:this.#waypoints(room).length, votes: {}, createdAt: Date.now() });
       }
       if (!add) room.destination = proposal.course.destination;
-      const shared = this.#courses.get(proposal.course.id); if (shared) { shared.uses = (shared.uses || 0) + 1; this.#bump(shared.id, 3, 'use:' + room.id); }
+      const shared = this.#courses.get(proposal.course.id);
+      if (shared) {
+        shared.uses = (shared.uses || 0) + 1; this.#bump(shared.id, 3, 'use:' + room.id);
+        // 추천받은 코스로 가는 여행임을 기록한다. 이 여행은 다시 공유하지 않고 좋아요·후기를 남긴다.
+        this.#openTrip(room).fromCourse = { id: shared.id, title: shared.title };
+      }
     }
+    this.#openTrip(room);
     if (proposal.type === 'WAYPOINT') proposal.waypointOrder = this.#waypoints(room).length;
     proposal.status = 'ACCEPTED'; if (proposal.type === 'DESTINATION') room.destination = proposal.place;
     this.#touch(room);

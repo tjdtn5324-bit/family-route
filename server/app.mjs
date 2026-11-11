@@ -80,7 +80,7 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
       if (req.method === 'POST' && url.pathname === '/api/join') { const b = await body(); return send(201, rooms.join(b.invite, b.name)); }
       if (req.method === 'GET' && url.pathname === '/api/state') return send(200, rooms.state(auth));
       if (req.method === 'POST' && url.pathname === '/api/trip/finish') return send(200,{trip:rooms.finishTrip(auth,(await body()).choice)});
-      if (req.method === 'POST' && url.pathname === '/api/photos') { rooms.session(auth); return send(201,rooms.addPhoto(auth,(await body(360000)).data)); }
+      if (req.method === 'POST' && url.pathname === '/api/photos') { rooms.session(auth); const b = await body(360000); return send(201,rooms.addPhoto(auth,b.data,typeof b.tripId === 'string' ? b.tripId : null)); }
       const photo=url.pathname.match(/^\/api\/photos\/([a-f0-9-]{36})$/);
       if (photo && req.method === 'GET') return send(200,rooms.getPhoto(auth,photo[1]));
       if (photo && req.method === 'DELETE') { rooms.deletePhoto(auth,photo[1]); return send(200,{ok:true}); }
@@ -100,7 +100,7 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
         if (!profile) return send(503,{error:'계정 저장을 준비하고 있어요'});
         let userId;try{userId=await profile.verify(auth)}catch{return send(401,{error:'로그인을 다시 해 주세요'})}
         if(req.method==='GET' && url.pathname==='/api/profile/memories')return send(200,{memories:await profile.store.listMemories(userId)});
-        if(req.method==='POST' && url.pathname==='/api/profile/memories'){await body();const trip=rooms.completedTrip(String(req.headers['x-room-token']||''));return send(201,{memory:await profile.store.saveMemory(userId,trip)});}
+        if(req.method==='POST' && url.pathname==='/api/profile/memories'){const b=await body();const trip=rooms.tripForMemory(String(req.headers['x-room-token']||''),typeof b.tripId==='string'?b.tripId:null);return send(201,{memory:await profile.store.saveMemory(userId,trip)});}
         if(req.method==='GET' && url.pathname==='/api/profile/likes')return send(200,{ids:rooms.likedCourses(userId)});
         return send(404,{error:'찾을 수 없습니다'});
       }
@@ -130,7 +130,7 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
         return send(200, req.method === 'POST' ? rooms.reviewCourse(userId, reviews[1], await body()) : rooms.deleteReview(userId, reviews[1]));
       }
       if (req.method === 'GET' && url.pathname === '/api/recommended-courses') return send(200, { courses: rooms.recommendedCourses(auth, Number(url.searchParams.get('latitude')), Number(url.searchParams.get('longitude'))) });
-      if (req.method === 'POST' && url.pathname === '/api/courses') { const b = await body(); return send(201, rooms.publishCourse(auth, b.title, b.description, b.source, b.exclude ?? [])); }
+      if (req.method === 'POST' && url.pathname === '/api/courses') { const b = await body(); return send(201, rooms.publishCourse(auth, b.title, b.description, b.source, b.exclude ?? [], typeof b.tripId === 'string' ? b.tripId : null)); }
       // 올린 가족방만 코스를 내릴 수 있다. 신고는 로그인한 계정당 한 번이다.
       const ownCourse = url.pathname.match(/^\/api\/courses\/([a-f0-9-]{36})$/);
       if (req.method === 'DELETE' && ownCourse) { rooms.unpublishCourse(auth, ownCourse[1]); return send(200, { ok: true }); }
@@ -175,7 +175,8 @@ export function createApp({ rooms = new Rooms({sampleCourses: process.env.FAMILY
         return;
       }
       send(404, { error: '찾을 수 없습니다' });
-    } catch (error) { if (!res.headersSent) send(400, { error: error instanceof SyntaxError ? '요청 형식을 확인해 주세요' : error.message }); else res.end(); }
+    // 오류마다 맞는 응답 코드를 쓴다: 401 다시 참여 필요, 403 권한 없음, 404 없음, 409 지금 상태로는 할 수 없음, 그 밖은 400.
+    } catch (error) { if (!res.headersSent) send(error instanceof SyntaxError ? 400 : error.status || 400, { error: error instanceof SyntaxError ? '요청 형식을 확인해 주세요' : error.message }); else res.end(); }
   });
   server.headersTimeout = 10000;
   server.requestTimeout = 20000;

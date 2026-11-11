@@ -62,5 +62,5 @@ test('계정 장소 검색과 휴대폰에서 만든 여행방의 차량 연결'
   assert.equal((await request('/api/rooms/claim',{data:{code:room.code}})).status,403);
   const vehicle=await (await request('/api/rooms/claim',{secret:'vehicle',data:{code:room.code}})).json();
   assert.ok(vehicle.driverToken);assert.equal((await request('/api/state',{token:vehicle.driverToken})).status,200);
-  assert.equal((await request('/api/rooms/claim',{secret:'vehicle',data:{code:room.code}})).status,400);
+  assert.equal((await request('/api/rooms/claim',{secret:'vehicle',data:{code:room.code}})).status,404);
 });

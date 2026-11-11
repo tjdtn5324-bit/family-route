@@ -81,6 +81,7 @@ class MainActivity : ComponentActivity() {
             var pendingReplace by remember { mutableStateOf<Pair<String, () -> Unit>?>(null) }
             var confirmForget by remember { mutableStateOf<String?>(null) }
             var finishDialog by remember { mutableStateOf(false) }
+            var lastTripFromCourse by remember { mutableStateOf(false) }
             var memoryDialog by remember { mutableStateOf(false) }
 
             // 찾기
@@ -101,6 +102,8 @@ class MainActivity : ComponentActivity() {
 
             // 가족방 연결, 순서 바꾸기, 사진
             var pairingCode by remember { mutableStateOf("") }
+            // 지금 경로가 추천받은 코스에서 시작됐으면 그 코스 이름. 이 여행은 다시 공유하지 않고 후기를 남긴다.
+            var fromCourseTitle by remember { mutableStateOf("") }
             var switchingRoom by remember { mutableStateOf(false) }
             var editWaypoints by remember { mutableStateOf<List<LiveWaypoint>>(emptyList()) }
             var editVersion by remember { mutableIntStateOf(-1) }
@@ -112,7 +115,7 @@ class MainActivity : ComponentActivity() {
             var photoStatus by remember { mutableStateOf("") }
 
             fun applyState(s: LiveRoomState) {
-                proposals = s.proposals; route = s.route; waypoints = s.waypoints; itineraryVersion = s.itineraryVersion; familyPhotos = s.photos
+                proposals = s.proposals; route = s.route; waypoints = s.waypoints; itineraryVersion = s.itineraryVersion; familyPhotos = s.photos; fromCourseTitle = s.fromCourseTitle
                 if (s.roomName.isNotBlank()) roomName = s.roomName
             }
             fun open(next: Screen) { screen = next; error = ""; switchingRoom = false; photoRoom = null; photoImages = emptyList(); albumPhotos = emptyList(); deletePhotoTarget = null; photoStatus = "" }
@@ -190,6 +193,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             fun finish(choice: String) = run("안내를 종료하지 못했어요. 연결을 확인해 주세요.") {
+                lastTripFromCourse = fromCourseTitle.isNotBlank()
                 val active = room ?: return@run
                 client.finishTrip(active, choice)
                 route = null; waypoints = emptyList(); finishDialog = false; memoryDialog = choice != "SKIP"
@@ -217,7 +221,17 @@ class MainActivity : ComponentActivity() {
                         // 수락 같은 작업이 진행 중일 때 그 전에 떠난 응답으로 화면을 되돌리지 않는다.
                         if (!busy) applyState(s)
                         offline = false
-                    } catch (_: Exception) { offline = true }
+                    } catch (e: Exception) {
+                        // 401: 서버에서 가족방이 닫혔다. 끊김으로 오래 두지 않고 처음 화면으로 돌아간다.
+                        if (client.isRoomGone(e)) {
+                            val next = roomHistory.filterNot { it.driverToken == active.driverToken }
+                            if (historyStore.save(next)) roomHistory = next
+                            room = null; route = null; proposals = emptyList(); waypoints = emptyList(); familyPhotos = emptyList(); roomName = ""; fromCourseTitle = ""
+                            notice = "가족방이 닫혔어요. 가족 메뉴에서 새로 연결해 주세요."
+                            break
+                        }
+                        offline = true
+                    }
                     delay(2000)
                 }
             }
@@ -414,9 +428,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                         Card(Modifier.weight(1f)) {
                                             T("휴대폰에서 만든 방", 23, FontWeight.Bold)
-                                            T("휴대폰의 ‘차량 연결’ 코드 10자리를 적어 주세요.", 18, color = CarColors.Sub)
-                                            TextInput(pairingCode, { pairingCode = it.uppercase().take(10) }, "연결 코드", "차량 연결 코드 10자리 입력", Modifier.fillMaxWidth(), 26) { connectByCode() }
-                                            CarButton(if (busy) "연결 중" else "이 코드로 연결", Modifier.fillMaxWidth(), Btn.Soft, enabled = !busy && pairingCode.length == 10) { replacing("휴대폰 가족방에 연결하면") { connectByCode() } }
+                                            T("휴대폰의 ‘차량 연결’에 나온 숫자 6자리를 적어 주세요.", 18, color = CarColors.Sub)
+                                            TextInput(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, "숫자 6자리", "차량 연결 코드 숫자 6자리 입력", Modifier.fillMaxWidth(), 30, numeric = true) { connectByCode() }
+                                            CarButton(if (busy) "연결 중" else "이 코드로 연결", Modifier.fillMaxWidth(), Btn.Soft, enabled = !busy && pairingCode.length == 6) { replacing("휴대폰 가족방에 연결하면") { connectByCode() } }
                                         }
                                     }
                                 } else {
@@ -475,11 +489,11 @@ class MainActivity : ComponentActivity() {
                                     if (!switchingRoom) CarButton("다른 가족방으로 바꾸기", Modifier.fillMaxWidth(), Btn.Line) { switchingRoom = true; pairingCode = "" }
                                     else Card {
                                         T("다른 가족방으로 바꾸기", 22, FontWeight.Bold)
-                                        T("바꾸면 지도와 제안이 새 방의 내용으로 바뀌어요. 휴대폰의 연결 코드 10자리를 적어 주세요.", 18, color = CarColors.Sub)
-                                        TextInput(pairingCode, { pairingCode = it.uppercase().take(10) }, "연결 코드", "다른 가족방 연결 코드 10자리 입력", Modifier.fillMaxWidth(), 26) { connectByCode() }
+                                        T("바꾸면 지도와 제안이 새 방의 내용으로 바뀌어요. 휴대폰의 ‘차량 연결’에 나온 숫자 6자리를 적어 주세요.", 18, color = CarColors.Sub)
+                                        TextInput(pairingCode, { pairingCode = it.filter(Char::isDigit).take(6) }, "숫자 6자리", "다른 가족방 연결 코드 숫자 6자리 입력", Modifier.fillMaxWidth(), 30, numeric = true) { connectByCode() }
                                         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                             CarButton("취소", Modifier.weight(1f), Btn.Soft) { switchingRoom = false; pairingCode = "" }
-                                            CarButton(if (busy) "연결 중" else "바꾸고 연결", Modifier.weight(1.4f), enabled = !busy && pairingCode.length == 10) { replacing("다른 가족방으로 바꾸면") { connectByCode() } }
+                                            CarButton(if (busy) "연결 중" else "바꾸고 연결", Modifier.weight(1.4f), enabled = !busy && pairingCode.length == 6) { replacing("다른 가족방으로 바꾸면") { connectByCode() } }
                                         }
                                     }
                                 }
@@ -623,10 +637,13 @@ class MainActivity : ComponentActivity() {
                     CarButton("계속 안내받기", Modifier.fillMaxWidth(), enabled = !busy) { finishDialog = false; error = "" }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         CarButton("끝내고 추억 남기기", Modifier.weight(1f), Btn.Soft, enabled = !busy) { finish("MEMORY") }
-                        CarButton("끝내고 코스 공개하기", Modifier.weight(1f), Btn.Soft, enabled = !busy) { finish("SHARE") }
+                        // 추천받은 코스로 다녀온 여행은 다시 공유하지 않고, 그 코스에 좋아요·후기를 남긴다.
+                        if (fromCourseTitle.isNotBlank()) CarButton("끝내고 후기 남기기", Modifier.weight(1f), Btn.Soft, enabled = !busy) { finish("REVIEW") }
+                        else CarButton("끝내고 코스 공개하기", Modifier.weight(1f), Btn.Soft, enabled = !busy) { finish("SHARE") }
                         CarButton("그냥 끝내기", Modifier.weight(.8f), Btn.Line, enabled = !busy) { finish("SKIP") }
                     }
-                    T("‘코스 공개하기’는 다른 가족도 볼 수 있게 올리는 거예요. 휴대폰에서 공개할 장소를 고른 뒤에 올라가요. 가족 사진은 공개되지 않아요.", 17, color = CarColors.Sub)
+                    T(if (fromCourseTitle.isNotBlank()) "추천 코스 「$fromCourseTitle」로 다녀온 여행이라 공유 대신 휴대폰에서 좋아요와 후기를 남길 수 있어요. 여행 기록과 사진은 가족방에 묶여 남아요."
+                      else "‘코스 공개하기’는 다른 가족도 볼 수 있게 올리는 거예요. 휴대폰에서 공개할 장소를 고른 뒤에 올라가요. 가족 사진은 공개되지 않아요.", 17, color = CarColors.Sub)
                 }
                 if (memoryDialog && parked) CenterDialog {
                     T("오늘 여행을 함께 남겨요", 30, FontWeight.Black)
@@ -634,7 +651,7 @@ class MainActivity : ComponentActivity() {
                         val memoryInvite = room?.let { inviteUrl(it) }
                         if (memoryInvite != null) InviteQr(memoryInvite, 220)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            T((if (memoryInvite != null) "① 휴대폰으로 QR을 찍어 가족방을 열어요." else "① 휴대폰에서 가족방을 열어요.") + "\n②‘추억 저장’이나 ‘코스 공유’를 눌러요.\n③ 사진도 올려 보세요.", 21, color = CarColors.Ink)
+                            T((if (memoryInvite != null) "① 휴대폰으로 QR을 찍어 가족방을 열어요." else "① 휴대폰에서 가족방을 열어요.") + "\n② ‘우리 가족 여행 기록’에서 이번 여행을 열어요.\n③ 추억 저장·" + (if (lastTripFromCourse) "좋아요·후기" else "코스 공유") + "를 하고 사진도 올려 보세요.", 21, color = CarColors.Ink)
                             if (memoryInvite != null) T("QR을 받은 사람은 가족방에 들어올 수 있어요. 가족에게만 보여 주세요.", 17, color = CarColors.Sub)
                         }
                     }

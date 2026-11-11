@@ -159,18 +159,17 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
         <p class="note warm" id="roomExpiry" hidden></p>
         <div class="row"><button class="btn" id="inviteBtn" type="button"></button><button class="btn soft" id="pairBtn" type="button"></button></div>
       </section>
-      <section class="card" id="finishedCard" hidden>
-        <span class="tag ok">여행을 마쳤어요</span>
-        <h2 id="finishedTitle" style="margin-top:8px"></h2>
-        <p class="sub">사진을 올리고, 다녀온 길을 남겨 보세요. 가족 사진은 공개되지 않아요.</p>
-        <div class="row"><button class="btn" id="saveMemoryBtn" type="button">추억 저장</button><button class="btn soft" id="shareCourseBtn2" type="button">코스 공유</button></div>
-      </section>
       <section class="card"><h2>우리 여행 순서</h2><div id="itinerary"></div></section>
       <section class="card"><h2>가족의 제안</h2><div id="proposals"></div></section>
       <section class="card">
-        <h2>우리 가족 사진</h2><p class="sub" id="photoSub">이 가족방 사람만 볼 수 있어요.</p>
+        <h2 id="photoTitle">우리 가족 사진</h2><p class="sub" id="photoSub">이 가족방 사람만 볼 수 있어요.</p>
         <div class="photos" id="photoGrid"></div>
         <input type="file" id="photoFile" accept="image/jpeg,image/png,image/webp" multiple hidden>
+      </section>
+      <!-- 가족방 안의 여행 묶음: 여행마다 다녀온 곳·사진·남기기 버튼을 모은다 -->
+      <section class="card" id="tripsCard" hidden>
+        <h2>우리 가족 여행 기록</h2><p class="sub">여행마다 다녀온 곳과 사진을 묶어 둬요.</p>
+        <div id="tripList"></div>
       </section>
       <section class="card" style="padding-block:8px" id="homeLinks"></section>
     </div>
@@ -562,20 +561,16 @@ function renderHome() {
     $('roomTag').textContent = s.itinerary ? '여행 중' : s.completedTrip ? '다녀온 여행' : '함께 준비하는 여행';
     $('memberChips').replaceChildren(...s.members.map(m => h('span', { class: 'chip', text: m.name + (m.id === s.me.id ? ' (나)' : '') })));
   }
-  $('finishedCard').hidden = !s.completedTrip;
-  if (s.completedTrip?.choice === 'SHARE' && !s.itinerary && local.get('family-route-share-asked') !== s.completedTrip.id && !$('sheet').open && currentTab === 'home') {
-    local.set('family-route-share-asked', s.completedTrip.id); openPublish();
+  // 차에서 안내를 끝내며 고른 일을 휴대폰에서 한 번 이어서 열어 준다(공유 또는 후기).
+  const lastDone = (s.trips || []).find(t => t.status === 'DONE');
+  if (lastDone && !s.itinerary && ['SHARE', 'REVIEW'].includes(lastDone.choice) && local.get('family-route-share-asked') !== lastDone.id && !$('sheet').open && currentTab === 'home') {
+    local.set('family-route-share-asked', lastDone.id);
+    if (lastDone.fromCourse) openReviews(lastDone.fromCourse, () => {}).catch(e => toast(e.message, true)); else openPublish(lastDone.id);
   }
-  if (s.completedTrip) $('finishedTitle').textContent = s.completedTrip.destination.name + ' 여행';
 
-  if (changed('itinerary', [s.itinerary, s.completedTrip?.id, s.proposals.map(p => [p.id, p.status])])) {
+  if (changed('itinerary', [s.itinerary, s.proposals.map(p => [p.id, p.status])])) {
     const box = $('itinerary');
-    if (!s.itinerary && s.completedTrip) {
-      const stops = [...s.completedTrip.waypoints, s.completedTrip.destination], list = h('ol', { class: 'steps' });
-      stops.forEach((p, i) => list.append(h('li', {}, h('span', { class: 'num' + (i === stops.length - 1 ? ' dest' : '') }, i === stops.length - 1 ? icon('flag') : String(i + 1)), h('div', {}, h('strong', { text: p.name })))));
-      box.replaceChildren(h('p', { class: 'sub', text: '함께 다녀온 길이에요.' }), list);
-    }
-    else if (!s.itinerary) box.replaceChildren(emptyBox('map', '아직 정해진 목적지가 없어요.', btn('가고 싶은 곳 찾기', () => { showTab('find'); showFind('places'); }, 'full', 'search')));
+    if (!s.itinerary) box.replaceChildren(emptyBox('map', '아직 정해진 목적지가 없어요.', btn('가고 싶은 곳 찾기', () => { showTab('find'); showFind('places'); }, 'full', 'search')));
     else {
       const stops = [...s.itinerary.waypoints, s.itinerary.destination], list = h('ol', { class: 'steps' });
       stops.forEach((p, i) => {
@@ -583,7 +578,7 @@ function renderHome() {
         const by = s.proposals.find(x => x.status === 'ACCEPTED' && (x.id === p.proposalId || (last && x.type === 'DESTINATION' && x.place.name === p.name)));
         list.append(h('li', {}, h('span', { class: 'num' + (last ? ' dest' : '') }, last ? icon('flag') : String(i + 1)), h('div', {}, h('strong', { text: p.name }), h('p', { class: 'sub', text: (last ? '도착지' : '들르는 곳') + (by?.member?.name ? ' · ' + by.member.name + '님 제안' : '') }))));
       });
-      box.replaceChildren(list, btn('장소 더 제안하기', () => { showTab('find'); showFind('places'); }, 'soft full', 'plus'));
+      box.replaceChildren(s.itinerary.fromCourse ? h('p', { class: 'note', text: '추천 코스 「' + s.itinerary.fromCourse.title + '」로 가는 여행이에요.' }) : '', list, btn('장소 더 제안하기', () => { showTab('find'); showFind('places'); }, 'soft full', 'plus'));
     }
   }
 
@@ -606,12 +601,56 @@ function renderHome() {
       box.append(more);
     }
   }
-  if (changed('photos', [s.photos, s.me.id])) renderPhotos(s);
-  if (changed('links', [!!s.itinerary, !!s.completedTrip])) {
+  if (changed('photos', [s.photos, s.me.id, s.currentTripId])) renderPhotos(s);
+  if (changed('trips', [s.trips, s.photos, s.me.id, [...profile.likes]])) renderTrips(s);
+  if (changed('links', [!!s.itinerary, !!s.itinerary?.fromCourse])) {
     const links = $('homeLinks');
     links.replaceChildren(linkRow('sliders', '우리 가족 여행 취향', openPreferences));
-    if (s.itinerary || s.completedTrip) links.append(linkRow('book', '우리 코스 공유하기', openPublish));
+    // 추천받은 코스로 가는 여행은 다시 공유하지 않는다.
+    if (s.itinerary && !s.itinerary.fromCourse) links.append(linkRow('book', '지금 경로를 코스로 공유하기', () => openPublish()));
   }
+}
+// ───────── 여행 묶음 ─────────
+const tripDate = t => t.finishedAt ? new Date(t.finishedAt).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' }) : '';
+function renderTrips(s) {
+  const done = (s.trips || []).filter(t => t.status === 'DONE'), box = $('tripList');
+  $('tripsCard').hidden = !done.length;
+  const opened = new Set([...box.querySelectorAll('details[open]')].map(d => d.dataset.trip));
+  box.replaceChildren(...done.map((t, i) => {
+    const photos = (s.photos || []).filter(p => p.tripId === t.id);
+    const d = h('details', { class: 'more', 'data-trip': t.id }, h('summary', { text: t.title + ' · ' + tripDate(t) + (photos.length ? ' · 사진 ' + photos.length + '장' : '') }));
+    if (opened.size ? opened.has(t.id) : i === 0) d.open = true;
+    d.append(
+      t.fromCourse ? h('span', { class: 'tag ok', text: '추천 코스 「' + t.fromCourse.title + '」로 다녀왔어요' }) : h('span', { class: 'tag', text: '우리 가족이 만든 길' }),
+      h('p', { class: 'sub', style: 'margin-top:8px', text: [...t.waypoints, t.destination].filter(Boolean).map(p => p.name).join(' → ') }),
+      photoGrid(photos, s, t.id));
+    const actions = h('div', { class: 'row' });
+    if (t.fromCourse) {
+      // 남이 만든 코스는 다시 공유하지 않고, 좋아요·후기·추억으로 남긴다.
+      const liked = () => profile.likes.has(t.fromCourse.id);
+      const like = btn('', async () => {
+        if (!signedIn()) { needLogin('좋아요는 로그인한 뒤 누를 수 있어요.'); return; }
+        const r = await profileApi('/api/courses/' + encodeURIComponent(t.fromCourse.id) + '/like', 'POST', { liked: !liked() });
+        if (r.liked) profile.likes.add(t.fromCourse.id); else profile.likes.delete(t.fromCourse.id);
+        paint(); toast(r.liked ? '이 코스에 좋아요를 남겼어요.' : '좋아요를 취소했어요.');
+      }, 'soft');
+      const paint = () => { like.replaceChildren(icon('heart'), liked() ? '좋아요함' : '좋아요'); like.setAttribute('aria-pressed', String(liked())); };
+      paint();
+      actions.append(like, btn('후기 남기기', () => openReviews(t.fromCourse, () => {}), 'soft'), btn('추억 저장', () => saveMemory(t.id)));
+    } else actions.append(btn('추억 저장', () => saveMemory(t.id)), btn('코스 공유', () => openPublish(t.id), 'soft'));
+    d.append(actions);
+    return d;
+  }));
+  // 좋아요 표시를 맞추려고 로그인한 사람의 좋아요 목록을 한 번 불러온다.
+  if (signedIn() && !profile.likesLoaded && done.some(t => t.fromCourse)) {
+    profile.likesLoaded = true;
+    profileApi('/api/profile/likes').then(r => { profile.likes = new Set(r.ids); sig.trips = ''; renderTrips(state); }).catch(() => { profile.likesLoaded = false; });
+  }
+}
+async function saveMemory(tripId) {
+  if (!signedIn()) { tab.set('family-after-login', 'memory:' + tripId); needLogin('추억은 내 계정에 저장돼요.'); return; }
+  await profileApi('/api/profile/memories', 'POST', { tripId }, { 'X-Room-Token': room.token });
+  profile.memories = null; toast('내 추억에 저장했어요. 내 장소에서 볼 수 있어요.');
 }
 function linkRow(iconName, label, fn) { const b = h('button', { class: 'linkrow', type: 'button' }, icon(iconName), h('span', { text: label }), icon('chev', 'chev')); b.onclick = fn; return b; }
 function proposalItem(p, s) {
@@ -636,10 +675,16 @@ async function photoUrl(id) {
   if (!photoCache.has(id)) photoCache.set(id, roomApi('/api/photos/' + encodeURIComponent(id)).then(r => 'data:image/jpeg;base64,' + r.data).catch(e => { photoCache.delete(id); throw e; }));
   return photoCache.get(id);
 }
+// 지금 여행의 사진(여행 중이 아니면 '여행 전 사진')을 위 카드에, 끝난 여행의 사진은 여행 기록에 보여 준다.
 function renderPhotos(s) {
-  const grid = $('photoGrid'), photos = s.photos || [];
-  grid.replaceChildren();
-  $('photoSub').textContent = '이 가족방 사람만 볼 수 있어요. ' + photos.length + '/8장';
+  const current = s.currentTripId || null, photos = (s.photos || []).filter(p => (p.tripId || null) === current);
+  $('photoTitle').textContent = current ? '이번 여행 사진' : '여행 전 사진';
+  $('photoSub').textContent = '이 가족방 사람만 볼 수 있어요. ' + photos.length + '/8장' + (current ? '' : ' · 여행을 시작하면 그 여행의 사진으로 모여요.');
+  $('photoGrid').replaceWith(Object.assign(photoGrid(photos, s, current), { id: 'photoGrid' }));
+}
+let uploadTripId = null;
+function photoGrid(photos, s, tripId) {
+  const grid = h('div', { class: 'photos' });
   for (const photo of photos) {
     const img = h('img', { alt: photo.memberName + '님이 올린 사진', loading: 'lazy' });
     const cell = h('button', { type: 'button', 'aria-label': photo.memberName + '님이 올린 사진 크게 보기' }, '불러오는 중');
@@ -649,9 +694,10 @@ function renderPhotos(s) {
   }
   if (photos.length < 8 && s.me.role === 'member') {
     const add = h('button', { type: 'button', class: 'add' }, icon('plus'), '사진 올리기');
-    add.onclick = () => $('photoFile').click();
+    add.onclick = () => { uploadTripId = tripId; $('photoFile').click(); };
     grid.append(add);
   }
+  return grid;
 }
 async function compressPhoto(file) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw Error('JPG, PNG, WEBP 사진만 올릴 수 있어요.');
@@ -669,12 +715,12 @@ async function compressPhoto(file) {
 }
 $('photoFile').onchange = async () => {
   const picked = [...$('photoFile').files]; $('photoFile').value = '';
-  const room_ = Math.max(0, 8 - (state?.photos?.length || 0)), files = picked.slice(0, room_);
+  const target = uploadTripId, room_ = Math.max(0, 8 - (state?.photos || []).filter(p => (p.tripId || null) === target).length), files = picked.slice(0, room_);
   if (!files.length) { toast('사진이 8장으로 가득 찼어요. 올린 사진을 지우면 더 올릴 수 있어요.', true); return; }
   let done = 0, failed = picked.length - files.length, reason = failed ? '8장까지만 올릴 수 있어요.' : '';
   for (const [i, file] of files.entries()) {
     toast('사진 올리는 중 ' + (i + 1) + '/' + files.length);
-    try { await roomApi('/api/photos', 'POST', { data: await compressPhoto(file) }); done++; }
+    try { await roomApi('/api/photos', 'POST', { data: await compressPhoto(file), ...(target ? { tripId: target } : {}) }); done++; }
     catch (e) { failed++; reason = e.message; }
   }
   if (done) await refreshNow().catch(() => {});
@@ -731,7 +777,7 @@ async function pairCar() {
   const r = await roomApi('/api/rooms/pairing', 'POST', {});
   openSheet('차량에 연결하기', body => body.append(
     h('p', { class: 'sub', text: '차량 화면의 ‘가족’ 메뉴에서 이 코드를 입력해 주세요. 연결되면 이 창이 닫혀요.' }),
-    h('p', { class: 'code', text: r.code.replace(/(.{5})/, '$1 '), 'aria-label': '연결 코드 ' + r.code.split('').join(' ') }),
+    h('p', { class: 'code', text: r.code.replace(/^(\d{3})(\d{3})$/, '$1 $2'), 'aria-label': '연결 코드 ' + r.code.split('').join(' ') }),
     h('p', { class: 'sub', text: new Date(Date.now() + 10 * 60000).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + '까지 한 번만 쓸 수 있어요. 코드를 새로 받으면 앞의 코드는 못 써요.', style: 'text-align:center' })
   ));
 }
@@ -755,10 +801,13 @@ function openPreferences() {
     body.append(form);
   });
 }
-function openPublish() {
+// tripId가 있으면 그 여행을, 없으면 지금 경로를 공유한다.
+function openPublish(tripId) {
   if (!state) return;
-  const done = !state.itinerary && state.completedTrip, trip = done ? state.completedTrip : state.itinerary;
+  const picked = tripId ? (state.trips || []).find(t => t.id === tripId) : null;
+  const trip = picked || state.itinerary;
   if (!trip) return;
+  if (trip.fromCourse) { openReviews(trip.fromCourse, () => {}).catch(e => toast(e.message, true)); return; }
   openSheet('우리 코스 공유하기', body => {
     const title = h('input', { type: 'text', id: 'pubTitle', maxlength: 80, placeholder: '예: 가성비 부산 여행' }), desc = h('input', { type: 'text', id: 'pubDesc', maxlength: 300, placeholder: '예: 바다도 보고 맛있는 것도 먹어요' });
     const stops = [...trip.waypoints, trip.destination];
@@ -772,18 +821,12 @@ function openPublish() {
         if (!title.value.trim()) { title.focus(); throw Error('여행 이름을 적어 주세요.'); }
         const exclude = boxes.map((l, i) => l.firstChild.checked ? -1 : i).filter(i => i >= 0);
         if (exclude.length === stops.length) throw Error('공개할 장소를 한 곳 이상 남겨 주세요.');
-        await roomApi('/api/courses', 'POST', { title: title.value, description: desc.value, source: done ? 'completed' : 'current', exclude });
+        await roomApi('/api/courses', 'POST', { title: title.value, description: desc.value, source: picked ? 'completed' : 'current', exclude, ...(picked ? { tripId: picked.id } : {}) });
         closeSheet(); toast('코스를 공개했어요. 여행 코스에서 볼 수 있어요.'); coursesLoaded = false;
       }, 'full'));
   });
 }
-$('shareCourseBtn2').onclick = openPublish;
-$('saveMemoryBtn').replaceWith(Object.assign(btn('추억 저장', async () => {
-  if (!signedIn()) { tab.set('family-after-login', 'memory'); needLogin('추억은 내 계정에 저장돼요.'); return; }
-  await profileApi('/api/profile/memories', 'POST', {}, { 'X-Room-Token': room.token });
-  profile.memories = null; toast('내 추억에 저장했어요. 내 장소에서 볼 수 있어요.');
-  $('saveMemoryBtn').lastChild.textContent = '추억 저장됨';
-}), { id: 'saveMemoryBtn' }));
+
 function needLogin(reason) {
   openSheet('로그인이 필요해요', body => body.append(h('p', { class: 'sub', text: reason + ' 로그인하면 다른 기기에서도 볼 수 있어요.' }), config.enabled ? btn('로그인 또는 회원가입', login, 'full', 'user') : h('p', { class: 'note warm', text: '지금은 계정 기능을 준비 중이에요.' }),
     config.enabled ? h('p', { class: 'note', text: '로그인 화면은 영어로 나와요. 처음이면 Sign up, 가입했다면 Sign in을 눌러 주세요.' }) : null));
@@ -947,7 +990,8 @@ function courseCard(c) {
     await roomApi('/api/courses/' + encodeURIComponent(c.id) + '/propose', 'POST', {});
     toast('“' + c.title + '” 코스를 제안했어요. 운전자가 차에서 확인해요.'); refreshNow().catch(() => {});
   }, '', 'share'));
-  if (!c.sample) {
+  // 가족이 공유한 코스와 관광 안내 참고 코스에는 누구나(로그인한 사람) 좋아요를 누를 수 있다.
+  if (!c.sample || c.official) {
     const liked = () => profile.likes.has(c.id);
     let count = c.likes || 0;
     const like = btn('', async () => {
@@ -1224,9 +1268,10 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden && ro
     if (token) enterRoom(token, tab.get('family-route-invite') || entry?.invite || '');
   }
   // 로그인하러 갔다 돌아왔으면 하려던 '추억 저장'을 이어서 한다.
-  if (tab.get('family-after-login') === 'memory') {
+  const afterLogin = tab.get('family-after-login') || '';
+  if (afterLogin.startsWith('memory:')) {
     tab.del('family-after-login');
-    if (signedIn() && room.token) { cameBackForMemory = true; setTimeout(() => $('saveMemoryBtn').click(), 1500); }
+    if (signedIn() && room.token) { cameBackForMemory = true; setTimeout(() => saveMemory(afterLogin.slice(7)).catch(e => toast(e.message, true)), 1500); }
   }
   renderAll();
   if (location.pathname === '/courses') { showTab('find'); showFind('courses'); }

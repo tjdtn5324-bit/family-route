@@ -32,6 +32,7 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import ai.familyroute.demo.R
@@ -154,11 +155,12 @@ fun Choice(label: String, on: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-fun TextInput(value: String, onChange: (String) -> Unit, placeholder: String, description: String, modifier: Modifier = Modifier, size: Int = 22, onDone: () -> Unit = {}) {
+fun TextInput(value: String, onChange: (String) -> Unit, placeholder: String, description: String, modifier: Modifier = Modifier, size: Int = 22, numeric: Boolean = false, onDone: () -> Unit = {}) {
     Box(modifier.heightIn(min = 64.dp).background(Color.White, RoundedCornerShape(16.dp)).border(2.dp, Color(0xFFB3C1CD), RoundedCornerShape(16.dp)).padding(horizontal = 18.dp), contentAlignment = Alignment.CenterStart) {
         if (value.isEmpty()) T(placeholder, size, color = Color(0xFF7D8E9E), maxLines = 1)
         BasicTextField(value, onChange, singleLine = true, textStyle = frText(size, FontWeight.Medium, CarColors.Navy),
-            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { onDone() }),
+            // 숫자 코드를 적을 때는 숫자 자판을 띄운다.
+            keyboardOptions = KeyboardOptions(keyboardType = if (numeric) KeyboardType.NumberPassword else KeyboardType.Text, imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { onDone() }),
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = description })
     }
 }

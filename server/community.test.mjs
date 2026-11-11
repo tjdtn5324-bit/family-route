@@ -35,7 +35,7 @@ test('후기는 로그인한 본인만 쓰고 지우며, 별점 평균과 요즘
 
   assert.equal((await call(`/api/courses/${second.id}/reviews`, { data: { rating: 5, text: '좋았어요' } })).status, 401);
   assert.equal((await call(`/api/courses/${second.id}/reviews`, { token: 'a', data: { rating: 6 } })).status, 400);
-  assert.equal((await call('/api/courses/sample-busan-sea/reviews', { token: 'a', data: { rating: 5 } })).status, 400);
+  assert.equal((await call('/api/courses/sample-busan-sea/reviews', { token: 'a', data: { rating: 5 } })).status, 403);
   assert.equal((await call(`/api/courses/${second.id}/reviews`, { token: 'a', data: { rating: 5, text: '아이와 가기 좋았어요', name: '민지 엄마' } })).status, 200);
   assert.equal((await call(`/api/courses/${second.id}/reviews`, { token: 'a', data: { rating: 4, text: '다시 써요' } })).data.count, 1);
   const afterB = (await call(`/api/courses/${second.id}/reviews`, { token: 'b', data: { rating: 2, text: '주차가 어려웠어요' } })).data;
@@ -127,4 +127,50 @@ test('공개할 때 뺀 장소는 나가지 않고, 끝난 여행의 들르는 �
   assert.equal(rooms.state(member.memberToken).completedTrip.destination.name, '우리 집');
   const next = rooms.propose(member.memberToken, { name: '전주', latitude: 35.8, longitude: 127.1 }, '', 'DESTINATION');
   assert.equal(rooms.routeContext(room.driverToken, next.id).waypoints.length, 0);
+});
+
+test('가족방 안에 여행이 묶음으로 쌓이고, 사진은 여행별로 나뉜다', () => {
+  const rooms = new Rooms(), room = rooms.create('가족'), member = rooms.join(room.invite, '엄마');
+  const go = (name, lat) => { const c = rooms.destinationContext(room.driverToken, { name, latitude: lat, longitude: 129, address: '부산 동구' }); rooms.applyDestination(room.driverToken, c.version, c.destination, { points: [[37, 127], [lat, 129]] }); };
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]).toString('base64');
+  rooms.addPhoto(member.memberToken, jpeg); // 여행 전 사진
+  go('부산역', 35.1); rooms.addPhoto(member.memberToken, jpeg);
+  rooms.finishTrip(room.driverToken, 'MEMORY');
+  go('경주', 35.8); rooms.addPhoto(member.memberToken, jpeg); rooms.addPhoto(member.memberToken, jpeg);
+  const s = rooms.state(member.memberToken);
+  assert.equal(s.trips.length, 2); assert.equal(s.trips[0].status, 'ACTIVE'); assert.equal(s.trips[1].title, '부산역 여행');
+  assert.equal(s.currentTripId, s.trips[0].id);
+  assert.equal(s.trips[0].photoCount, 2); assert.equal(s.trips[1].photoCount, 1);
+  assert.equal(s.photos.filter(p => p.tripId === null).length, 1);
+  // 지난 여행에도 사진을 더할 수 있다.
+  assert.equal(rooms.addPhoto(member.memberToken, jpeg, s.trips[1].id).tripId, s.trips[1].id);
+  rooms.finishTrip(room.driverToken, 'SKIP');
+  const after = rooms.state(member.memberToken);
+  assert.equal(after.trips.length, 2); assert.equal(after.trips.every(t => t.status === 'DONE'), true); assert.equal(after.currentTripId, null);
+  // 그냥 끝낸 여행도 묶음에 남고, 고른 여행을 추억으로 저장할 수 있다.
+  assert.equal(rooms.tripForMemory(member.memberToken, after.trips[0].id).destination.name, '경주');
+  assert.throws(() => rooms.tripForMemory(member.memberToken, 'nope'), e => e.status === 404);
+});
+
+test('추천받은 코스로 다녀온 여행은 공유하지 않고, 참고 코스에도 좋아요를 누를 수 있다', () => {
+  const rooms = new Rooms({ sampleCourses: true }), room = rooms.create('가족'), member = rooms.join(room.invite, '엄마');
+  const p = rooms.proposeCourse(room.driverToken, 'guide-busan-market', true); p.course.mode = 'REPLACE';
+  const ctx = rooms.routeContext(room.driverToken, p.id); rooms.applyRoute(room.driverToken, p.id, ctx.version, { points: [[37, 127], [35, 129]] });
+  assert.equal(rooms.state(member.memberToken).itinerary.fromCourse.id, 'guide-busan-market');
+  assert.throws(() => rooms.publishCourse(member.memberToken, '우리 코스', ''), e => e.status === 409);
+  // 차량에서 '공유'를 골라도 추천 코스 여행이면 후기 남기기로 바뀐다.
+  rooms.finishTrip(room.driverToken, 'SHARE');
+  const trip = rooms.state(member.memberToken).trips[0];
+  assert.equal(trip.choice, 'REVIEW'); assert.equal(trip.fromCourse.title, '부산 골목과 시장 둘러보기');
+  assert.throws(() => rooms.publishCourse(member.memberToken, '우리 코스', '', 'completed', [], trip.id), e => e.status === 409);
+  assert.equal(rooms.setCourseLike('u1', 'guide-busan-market', true).likes, 1);
+  assert.throws(() => rooms.setCourseLike('u1', 'sample-busan-sea', true), e => e.status === 403);
+});
+
+test('차량 연결 코드는 숫자 6자리이고 한 번만 쓸 수 있다', () => {
+  const rooms = new Rooms(), room = rooms.create('가족'), member = rooms.join(room.invite, '엄마');
+  const { code, expiresAt } = rooms.pairing(member.memberToken);
+  assert.match(code, /^\d{6}$/); assert.ok(expiresAt > Date.now());
+  assert.equal(rooms.claimPairing(code.slice(0, 3) + ' ' + code.slice(3)).driverToken, room.driverToken);
+  assert.throws(() => rooms.claimPairing(code), e => e.status === 404);
 });

@@ -19,7 +19,7 @@ test('HTTP 가족방에서 검색, 제안, 투표 및 운전자 결정을 동기
   const preferences = { companions: ['PARENTS'], styles: ['RELAX'], hours: 4 };
   assert.equal((await call('/api/preferences', { token: member.memberToken, data: preferences })).status, 200);
   assert.deepEqual((await call('/api/state', { token: room.driverToken })).data.preferences, preferences);
-  assert.equal((await call('/api/preferences', { data: preferences })).status, 400);
+  assert.equal((await call('/api/preferences', { data: preferences })).status, 401);
   const found = await call('/api/places?q=%EC%B9%B4%ED%8E%98', { token: member.memberToken });
   const p = (await call('/api/proposals', { token: member.memberToken, data: { place: found.data.places[0], message: '여기 가요' } })).data;
   assert.equal((await call(`/api/proposals/${p.id}/vote`, { token: member.memberToken, data: { choice: 'YES' } })).status, 200);
@@ -34,7 +34,7 @@ test('HTTP 가족방에서 검색, 제안, 투표 및 운전자 결정을 동기
   assert.equal((await call('/api/itinerary/waypoints', {token:room.driverToken,data:{version:itinerary.version,ids:[]}})).status,200);
   assert.equal((await call('/api/state', {token:room.driverToken})).data.itinerary.waypoints.length,0);
   assert.equal((await call('/api/state', { token: member.memberToken })).data.proposals[0].status, 'REMOVED');
-  assert.equal((await call('/api/state')).status, 400);
+  assert.equal((await call('/api/state')).status, 401);
 });
 
 test('가족이 저장 묶음을 제안하면 운전자만 목적지에 반영한다', async t=>{
@@ -45,7 +45,7 @@ test('가족이 저장 묶음을 제안하면 운전자만 목적지에 반영�
   const room=(await call('/api/rooms',null,{name:'여행'})).data;
   const member=(await call('/api/join',null,{invite:room.invite,name:'민지'})).data;
   const group={title:'부산 여행',places:[{name:'시장',latitude:36,longitude:128},{name:'카페',latitude:37,longitude:127.3}]};
-  assert.equal((await call('/api/proposals/saved-group',null,group)).status,400);
+  assert.equal((await call('/api/proposals/saved-group',null,group)).status,401);
   const proposal=await call('/api/proposals/saved-group',member.memberToken,group);assert.equal(proposal.status,201);
   assert.equal((await call(`/api/proposals/${proposal.data.id}/route`,room.driverToken,{})).status,400);
   assert.equal((await call('/api/destination',room.driverToken,{place:{name:'부산역',latitude:35.115,longitude:129.042}})).status,200);

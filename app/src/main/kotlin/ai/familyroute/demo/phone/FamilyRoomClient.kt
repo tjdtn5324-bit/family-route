@@ -15,7 +15,7 @@ data class LiveRoute(val pointsJson: String, val distance: Int, val duration: In
 data class RoomPreferences(val companions: Set<String> = emptySet(), val styles: Set<String> = emptySet(), val hours: Int? = null)
 data class LiveWaypoint(val id: String, val name: String)
 data class FamilyPhoto(val id: String, val memberName: String)
-data class LiveRoomState(val proposals: List<LiveProposal>, val route: LiveRoute?, val preferences: RoomPreferences = RoomPreferences(), val waypoints: List<LiveWaypoint> = emptyList(), val itineraryVersion: Int = -1, val photos: List<FamilyPhoto> = emptyList(), val archived: Boolean = false, val roomName: String = "")
+data class LiveRoomState(val proposals: List<LiveProposal>, val route: LiveRoute?, val preferences: RoomPreferences = RoomPreferences(), val waypoints: List<LiveWaypoint> = emptyList(), val itineraryVersion: Int = -1, val photos: List<FamilyPhoto> = emptyList(), val archived: Boolean = false, val roomName: String = "", val fromCourseTitle: String = "")
 data class SearchPlace(val name: String, val address: String, val latitude: Double, val longitude: Double)
 data class SharedCourse(val id: String, val title: String, val stops: String, val uses: Int, val matchReason: String = "", val isSample: Boolean = false, val description: String = "", val destination: SearchPlace? = null, val likes: Int = 0, val rating: Double? = null, val reviewCount: Int = 0, val trending: Boolean = false, val official: Boolean = false, val region: String = "", val sourceName: String = "", val sourceKind: String = "")
 data class CourseReview(val name: String, val rating: Int, val text: String)
@@ -25,6 +25,8 @@ data class TrendingRegions(val active: Boolean, val names: List<String>)
 /** 가족방과 앱 자체 경로 서비스를 연결한다. */
 class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_URL.trimEnd('/')) {
     private class ServerError(val status: Int) : IllegalStateException("가족방 서버 요청 실패 ($status)")
+    /** 서버가 401로 답하면 가족방이 닫혔거나 이 차의 연결이 끝난 것이다. */
+    fun isRoomGone(e: Exception): Boolean = e is ServerError && e.status == 401
 
     suspend fun inviteOrigin(): String? {
         val configured = BuildConfig.FAMILY_INVITE_URL.takeIf { it.isNotBlank() }
@@ -89,7 +91,7 @@ class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_UR
         val waypoints = if (stops == null) emptyList() else (0 until stops.length()).map { stops.getJSONObject(it) }.mapNotNull { val id = it.optString("proposalId"); if (id.isBlank()) null else LiveWaypoint(id, it.getString("name")) }
         val pictures = response.optJSONArray("photos")
         val photos = if (pictures == null) emptyList() else (0 until pictures.length()).map { pictures.getJSONObject(it) }.map { FamilyPhoto(it.getString("id"), it.optString("memberName", "가족")) }
-        return LiveRoomState(proposals, route, preferences, waypoints, response.optJSONObject("itinerary")?.optInt("version", -1) ?: -1, photos, response.optBoolean("archived", false), response.optJSONObject("room")?.optString("name") ?: "")
+        return LiveRoomState(proposals, route, preferences, waypoints, response.optJSONObject("itinerary")?.optInt("version", -1) ?: -1, photos, response.optBoolean("archived", false), response.optJSONObject("room")?.optString("name") ?: "", response.optJSONObject("itinerary")?.optJSONObject("fromCourse")?.optString("title") ?: "")
     }
 
     suspend fun addToRoute(room: LiveRoom, id: String) { request("/api/proposals/$id/route", room.driverToken, JSONObject()) }
