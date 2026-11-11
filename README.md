@@ -48,7 +48,7 @@ adb install -r "apk/familyroute_아빠어디가_release.apk"
 adb shell am start -n ai.familyroute.demo/.MainActivity
 ```
 
-제출 APK는 제작 시점의 임시 HTTPS 시연 서버 주소를 포함합니다. 터널이나 PC 서버가 종료되면 연결되지 않습니다. 장기 운영 서버가 아니며, 독립 재현은 아래 방법으로 로컬 서버 주소를 지정해 빌드합니다.
+제출 APK의 차량 API는 에뮬레이터 호스트(`10.0.2.2:8789`)에 연결합니다. 위 모의 서버를 실행하면 추천과 가족방을 이용할 수 있습니다. 휴대폰 초대 링크에는 제작 시점의 임시 HTTPS 주소가 들어 있습니다. 다른 PC에서 휴대폰까지 참여하려면 같은 서버를 가리키는 공개 주소로 아래 설정을 변경합니다.
 
 ```powershell
 # JDK 17/21 및 Android SDK 경로 설정 후 저장소 루트에서 실행
@@ -56,7 +56,7 @@ adb shell am start -n ai.familyroute.demo/.MainActivity
 adb install -r app\build\outputs\apk\debug\app-debug.apk
 ```
 
-휴대폰 참여까지 확인하려면 서버를 HTTPS로 접근 가능하게 준비하고 그 주소로 APK를 다시 빌드합니다. 초대 QR·링크는 HTTPS 주소 설정 시 나타납니다. `family-server.properties`에 `familyServerUrl=https://YOUR_SERVER`를 지정하거나 `-PfamilyServerUrl=...`을 사용합니다. 임시 주소와 가족방 토큰을 소스에 커밋하지 않습니다. [접속 설정](docs/PHONE_ACCESS.md)
+휴대폰 참여까지 확인하려면 서버를 HTTPS로 접근 가능하게 준비하고 그 주소로 APK를 다시 빌드합니다. `familyInviteUrl=https://YOUR_SERVER`로 초대 주소를 별도 설정할 수 있습니다. 주소가 없으면 차량이 10자리 초대 코드를 QR과 글자로 표시합니다. 휴대폰에서 같은 서버의 홈페이지를 열어 코드를 입력합니다. `family-server.properties`에 `familyServerUrl=https://YOUR_SERVER`를 지정하거나 `-PfamilyServerUrl=...`을 사용합니다. 임시 주소와 가족방 토큰을 소스에 커밋하지 않습니다. [접속 설정](docs/PHONE_ACCESS.md)
 
 ### 3. 심사 시연 순서
 

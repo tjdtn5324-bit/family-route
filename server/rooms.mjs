@@ -327,7 +327,7 @@ export class Rooms {
   // sort: popular(좋아요순, 기본) | trending(요즘 인기) | new(새로 올라온). kind: community(가족 공유) | official(관광 안내 참고).
   publicCourses(query = '', { sort = 'popular', kind = '', roomId = null } = {}) {
     const q = clean(query, 80).toLocaleLowerCase(), now = Date.now();
-    const base = (a, b) => Number(!!a.sample) - Number(!!b.sample) || b.likes - a.likes || b.createdAt - a.createdAt;
+    const base = (a, b) => b.likes - a.likes || Number(!!a.sample) - Number(!!b.sample) || b.createdAt - a.createdAt;
     const order = sort === 'trending' ? (a, b) => b.trendScore - a.trendScore || base(a, b) : sort === 'new' ? (a, b) => Number(!!a.sample) - Number(!!b.sample) || b.createdAt - a.createdAt : base;
     return [...this.#courses.values()]
       .filter(c => !c.hidden || (roomId !== null && c.ownerRoomId === roomId))

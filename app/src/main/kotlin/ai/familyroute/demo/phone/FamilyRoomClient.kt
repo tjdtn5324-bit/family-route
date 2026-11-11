@@ -24,9 +24,7 @@ data class TrendingRegions(val active: Boolean, val names: List<String>)
 
 /** 가족방과 앱 자체 경로 서비스를 연결한다. */
 class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_URL.trimEnd('/')) {
-    fun homeUrl(): String? = if (server.startsWith("https://")) "$server/" else null
-    fun inviteUrl(room: LiveRoom): String? = if (server.startsWith("https://")) "$server/#invite=${room.invite}" else null
-    fun localInviteUrl(room: LiveRoom): String = "http://127.0.0.1:8789/#invite=${room.invite}"
+    fun inviteUrl(room: LiveRoom): String? = BuildConfig.FAMILY_INVITE_URL.takeIf { it.isNotBlank() }?.let { "$it/#invite=${room.invite}" }
     private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, method: String = if (body != null) "POST" else "GET"): JSONObject = withContext(Dispatchers.IO) {
         val c = URL("$server$path").openConnection() as HttpURLConnection
         try {
@@ -43,6 +41,11 @@ class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_UR
             if (c.responseCode !in 200..299) throw IllegalStateException("가족방 서버 요청 실패 (${c.responseCode})")
             JSONObject(c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
         } finally { c.disconnect() }
+    }
+
+    suspend fun invitationCode(room: LiveRoom): Pair<String, Long> {
+        val result = request("/api/rooms/invite-code", room.driverToken, JSONObject())
+        return result.getString("code") to result.getLong("expiresAt")
     }
 
     suspend fun create(): LiveRoom {

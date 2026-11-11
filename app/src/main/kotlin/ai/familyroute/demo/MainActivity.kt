@@ -411,9 +411,37 @@ class MainActivity : ComponentActivity() {
                                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
                                         Card(Modifier.width(250.dp)) {
                                             val invite = client.inviteUrl(active)
+                                            var useCode by remember(active.driverToken) { mutableStateOf(invite == null) }
+                                            var attempt by remember(active.driverToken) { mutableIntStateOf(0) }
+                                            var joinCode by remember(active.driverToken) { mutableStateOf("") }
+                                            var message by remember(active.driverToken) { mutableStateOf("") }
+                                            LaunchedEffect(active.driverToken, useCode, attempt) {
+                                                if (useCode) {
+                                                    joinCode = ""
+                                                    message = "초대 코드를 준비하고 있어요."
+                                                    try {
+                                                        val (code, expiresAt) = client.invitationCode(active)
+                                                        joinCode = code
+                                                        message = "휴대폰 가족방 홈의 ‘초대 코드로 참여하기’에 입력하세요."
+                                                        kotlinx.coroutines.delay((expiresAt - System.currentTimeMillis()).coerceAtLeast(0L))
+                                                        joinCode = ""
+                                                        message = "초대 코드가 만료됐어요."
+                                                    } catch (e: CancellationException) { throw e }
+                                                    catch (_: Exception) { message = "초대 코드를 받지 못했어요. 다시 시도해 주세요." }
+                                                }
+                                            }
                                             T("가족 초대", 22, FontWeight.Bold)
-                                            if (invite != null) { InviteQr(invite, 200); T("QR 또는 아래 초대 주소로 참여해요.", 17, color = CarColors.Sub); T(invite, 17, color = CarColors.Ink); T("휴대폰 가족방에서 링크를 복사해 카톡으로 공유할 수 있어요.", 17, color = CarColors.Sub) }
-                                            else T("지금은 QR을 만들 수 없어요. 휴대폰에서 가족방을 만들고 연결 코드를 이용해 주세요.", 17, color = CarColors.Sub)
+                                            if (useCode) {
+                                                if (joinCode.isNotEmpty()) { InviteQr(joinCode, 200); T(joinCode.chunked(5).joinToString(" "), 22, FontWeight.Bold) }
+                                                T(message, 17, color = CarColors.Sub)
+                                                if (joinCode.isEmpty()) CarButton("코드 다시 받기", Modifier.fillMaxWidth()) { attempt++ }
+                                                if (invite != null) CarButton("초대 링크 QR 보기", Modifier.fillMaxWidth()) { useCode = false }
+                                            } else if (invite != null) {
+                                                InviteQr(invite, 200)
+                                                T("QR을 찍으면 가족방이 열려요.", 17, color = CarColors.Sub)
+                                                T(invite, 17, color = CarColors.Ink)
+                                                CarButton("초대 코드로 참여", Modifier.fillMaxWidth()) { useCode = true }
+                                            }
                                         }
                                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                             T(if (proposals.isEmpty()) "가족의 제안을 기다리고 있어요" else "가족의 제안 ${proposals.size}곳", 23, FontWeight.Bold)
@@ -620,7 +648,7 @@ private fun stopNames(route: LiveRoute): List<String> = try {
 } catch (_: Exception) { listOf(route.destinationName) }
 
 /** 추천 여행을 보는 순서. 뒤의 값은 서버에 그대로 넘기는 조건이다. */
-private val COURSE_VIEWS = listOf("요즘 인기" to "sort=trending", "좋아요순" to "sort=popular&kind=community", "새로 올라온" to "sort=new&kind=community", "참고 코스" to "kind=official&sort=trending")
+private val COURSE_VIEWS = listOf("요즘 인기" to "sort=trending", "좋아요순" to "sort=popular", "새로 올라온" to "sort=new&kind=community", "참고 코스" to "kind=official&sort=trending")
 
 @Composable private fun CourseCard(course: SharedCourse, reviews: List<CourseReview>?, onReviews: () -> Unit, actions: @Composable ColumnScope.() -> Unit) {
     Card {

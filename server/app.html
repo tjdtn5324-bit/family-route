@@ -884,7 +884,7 @@ $('placeForm').onsubmit = async e => {
 // ───────── 찾기: 여행 코스 ─────────
 let coursesLoaded = false, courseRun = 0;
 // 보는 순서: 요즘 인기 / 좋아요순 / 새로 올라온 / 지역 추천(관광 안내 자료를 참고한 코스)
-const COURSE_VIEWS = [['trending', '요즘 인기', 'sort=trending'], ['popular', '좋아요순', 'sort=popular&kind=community'], ['new', '새로 올라온', 'sort=new&kind=community'], ['official', '참고 코스', 'kind=official&sort=trending']];
+const COURSE_VIEWS = [['trending', '요즘 인기', 'sort=trending'], ['popular', '좋아요순', 'sort=popular'], ['new', '새로 올라온', 'sort=new&kind=community'], ['official', '참고 코스', 'kind=official&sort=trending']];
 let courseView = 'trending';
 function drawCourseSorts() {
   $('courseSorts').replaceChildren(...COURSE_VIEWS.map(([key, label]) => {

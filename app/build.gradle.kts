@@ -25,6 +25,10 @@ android {
             .orElse(localRoomConfig.getProperty("familyServerUrl", "http://10.0.2.2:8789")).get()
         require(roomUrl == "http://10.0.2.2:8789" || roomUrl.startsWith("https://")) { "familyServerUrl must use HTTPS" }
         buildConfigField("String", "FAMILY_SERVER_URL", "\"${roomUrl.replace("\\", "\\\\").replace("\"", "\\\"")}\"")
+        val inviteBase = providers.gradleProperty("familyInviteUrl")
+            .orElse(localRoomConfig.getProperty("familyInviteUrl", if (roomUrl.startsWith("https://")) roomUrl else "")).get().trimEnd('/')
+        require(inviteBase.isEmpty() || inviteBase.matches(Regex("https://[a-zA-Z0-9.-]+(:[0-9]+)?"))) { "familyInviteUrl must be an HTTPS origin" }
+        buildConfigField("String", "FAMILY_INVITE_URL", "\"$inviteBase\"")
         val roomSecret = providers.environmentVariable("FAMILY_ROOM_CREATE_SECRET").orElse("").get()
         require(roomSecret.matches(Regex("[A-Za-z0-9_-]*"))) { "Invalid room create secret" }
         buildConfigField("String", "FAMILY_ROOM_CREATE_SECRET", "\"$roomSecret\"")
