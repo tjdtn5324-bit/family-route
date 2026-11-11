@@ -250,6 +250,18 @@ class MainActivity : ComponentActivity() {
             }
             // 주행 중에는 새 제안을 잠깐만 보여 주고, 정차 중에는 운전자가 고를 때까지 둔다.
             LaunchedEffect(incoming?.id, parked) { if (incoming != null && !parked) { delay(4000); incoming = null } }
+            var inviteOrigin by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(screen, memoryDialog) {
+                if (screen == Screen.FAMILY || screen == Screen.PHOTOS || memoryDialog) {
+                    while (true) {
+                        inviteOrigin = try { client.inviteOrigin() }
+                        catch (e: CancellationException) { throw e }
+                        catch (_: Exception) { null }
+                        delay(30000)
+                    }
+                }
+            }
+            fun inviteUrl(selected: LiveRoom) = inviteOrigin?.let { "$it/#invite=${selected.invite}" }
             LaunchedEffect(notice) { if (notice.isNotBlank()) { delay(5000); notice = "" } }
 
             val stopNames = remember(route) { route?.let { r -> stopNames(r) } ?: emptyList() }
@@ -410,8 +422,8 @@ class MainActivity : ComponentActivity() {
                                 } else {
                                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.Top) {
                                         Card(Modifier.width(250.dp)) {
-                                            val invite = client.inviteUrl(active)
-                                            var useCode by remember(active.driverToken) { mutableStateOf(invite == null) }
+                                            val invite = inviteUrl(active)
+                                            var useCode by remember(active.driverToken, invite == null) { mutableStateOf(invite == null) }
                                             var attempt by remember(active.driverToken) { mutableIntStateOf(0) }
                                             var joinCode by remember(active.driverToken) { mutableStateOf("") }
                                             var message by remember(active.driverToken) { mutableStateOf("") }
@@ -521,7 +533,7 @@ class MainActivity : ComponentActivity() {
                                     if (photoStatus.isNotBlank()) T(photoStatus, 20, color = CarColors.Sub)
                                     if (albumPhotos.isEmpty() && photoStatus.isBlank()) Card {
                                         T("아직 올라온 사진이 없어요", 23, FontWeight.Bold)
-                                        val invite = client.inviteUrl(album)
+                                        val invite = inviteUrl(album)
                                         if (invite != null) { InviteQr(invite, 170); T("휴대폰 가족방에서 사진을 올려 주세요.", 19, color = CarColors.Sub) }
                                     }
                                     photoImages.chunked(3).forEach { rowItems ->
@@ -619,7 +631,7 @@ class MainActivity : ComponentActivity() {
                 if (memoryDialog && parked) CenterDialog {
                     T("오늘 여행을 함께 남겨요", 30, FontWeight.Black)
                     Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.CenterVertically) {
-                        val memoryInvite = room?.let { client.inviteUrl(it) }
+                        val memoryInvite = room?.let { inviteUrl(it) }
                         if (memoryInvite != null) InviteQr(memoryInvite, 220)
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             T((if (memoryInvite != null) "① 휴대폰으로 QR을 찍어 가족방을 열어요." else "① 휴대폰에서 가족방을 열어요.") + "\n②‘추억 저장’이나 ‘코스 공유’를 눌러요.\n③ 사진도 올려 보세요.", 21, color = CarColors.Ink)

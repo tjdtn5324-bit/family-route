@@ -82,6 +82,8 @@ export class Rooms {
       }),
       sessions: structuredClone([...this.#sessions]),
       invites: structuredClone([...this.#invites]),
+      joinCodes: this.#permanentMemories ? [...this.#joinCodes].filter(([, v]) => v.expiresAt > Date.now()) : [],
+      pairings: this.#permanentMemories ? [...this.#pairings].filter(([, v]) => v.expiresAt > Date.now()) : [],
       courses: structuredClone([...this.#courses].filter(([, c]) => !c.sample)),
       likes: [...this.#likes].map(([id, users]) => [id, [...users]]),
       reviews: [...this.#reviews].map(([id, byUser]) => [id, structuredClone([...byUser])]),
@@ -95,6 +97,8 @@ export class Rooms {
     result.#rooms = new Map(snapshot.rooms.map(([id, room]) => [id, { ...structuredClone(room), listeners: new Set() }]));
     result.#sessions = new Map(structuredClone(snapshot.sessions));
     result.#invites = new Map(structuredClone(snapshot.invites));
+    result.#joinCodes = new Map((snapshot.joinCodes || []).filter(([, v]) => v.expiresAt > Date.now()));
+    result.#pairings = new Map((snapshot.pairings || []).filter(([, v]) => v.expiresAt > Date.now()));
     // 예시·참고 코스는 코드에서 다시 채우고(위 생성자), 보관된 가족 공유 코스를 그 위에 더한다.
     for (const [id, course] of structuredClone(snapshot.courses)) if (!course.sample) result.#courses.set(id, course);
     // 좋아요·후기·최근 활동은 나중에 추가된 항목이라 예전 저장 파일에는 없을 수 있다.

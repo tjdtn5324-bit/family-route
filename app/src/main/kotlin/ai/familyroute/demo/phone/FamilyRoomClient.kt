@@ -24,7 +24,19 @@ data class TrendingRegions(val active: Boolean, val names: List<String>)
 
 /** 가족방과 앱 자체 경로 서비스를 연결한다. */
 class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_URL.trimEnd('/')) {
-    fun inviteUrl(room: LiveRoom): String? = BuildConfig.FAMILY_INVITE_URL.takeIf { it.isNotBlank() }?.let { "$it/#invite=${room.invite}" }
+    private class ServerError(val status: Int) : IllegalStateException("가족방 서버 요청 실패 ($status)")
+
+    suspend fun inviteOrigin(): String? {
+        val configured = BuildConfig.FAMILY_INVITE_URL.takeIf { it.isNotBlank() }
+        if (server != "http://10.0.2.2:8789") return configured
+        return try {
+            request("/api/invite-origin").optString("origin").takeIf {
+                Regex("https://[a-z0-9-]+\\.trycloudflare\\.com").matches(it)
+            }
+        } catch (e: ServerError) {
+            if (e.status == 404) configured else throw e
+        }
+    }
     private suspend fun request(path: String, token: String? = null, body: JSONObject? = null, method: String = if (body != null) "POST" else "GET"): JSONObject = withContext(Dispatchers.IO) {
         val c = URL("$server$path").openConnection() as HttpURLConnection
         try {
@@ -38,7 +50,7 @@ class FamilyRoomClient(private val server: String = BuildConfig.FAMILY_SERVER_UR
                 c.setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 c.outputStream.use { it.write(body.toString().toByteArray(Charsets.UTF_8)) }
             }
-            if (c.responseCode !in 200..299) throw IllegalStateException("가족방 서버 요청 실패 (${c.responseCode})")
+            if (c.responseCode !in 200..299) throw ServerError(c.responseCode)
             JSONObject(c.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() })
         } finally { c.disconnect() }
     }
