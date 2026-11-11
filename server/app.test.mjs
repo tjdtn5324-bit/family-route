@@ -64,3 +64,28 @@ test('추천 코스를 한 번에 시작하면 목적지와 경유지가 함께 
  assert.equal(res.status,200);assert.equal(sent.destination.name,'부산역');assert.equal(sent.waypoints.length,2);
  const state=rooms.state(room.driverToken);assert.equal(state.itinerary.destination.name,'부산역');assert.equal(state.itinerary.waypoints.length,2);
 });
+
+test('한 초대로 참여한 두 휴대폰의 참가자와 개인 장소 권한은 분리된다', async t => {
+  const personal = new Map([['account-a', [{name:'A 개인 장소'}]], ['account-b', []]]);
+  const app = createApp({profile:{config:{}, verify:async value => { if (!personal.has(value)) throw Error('invalid'); return value; }, store:{list:async user => personal.get(user)}}});
+  await new Promise(resolve => app.listen(0, '127.0.0.1', resolve));
+  t.after(() => new Promise(resolve => app.close(resolve)));
+  const base = `http://127.0.0.1:${app.address().port}`;
+  async function call(path, token, data) {
+    const response = await fetch(base+path, {method:data?'POST':'GET', headers:{'Content-Type':'application/json', ...(token?{Authorization:'Bearer '+token}:{})},body:data?JSON.stringify(data):undefined});
+    return {status:response.status, data:await response.json()};
+  }
+  const room = (await call('/api/rooms', null, {name:'가족방'})).data;
+  const a = (await call('/api/join', null, {invite:room.invite,name:'내 이름'})).data;
+  const b = (await call('/api/join', null, {invite:room.invite,name:'친구'})).data;
+  assert.notEqual(a.memberToken,b.memberToken);
+  const stateA = (await call('/api/state',a.memberToken)).data;
+  const stateB = (await call('/api/state',b.memberToken)).data;
+  assert.notEqual(stateA.me.id,stateB.me.id);
+  assert.equal(stateB.me.name,'친구');
+  assert.equal(stateB.me.role,'member');
+  assert.equal(JSON.stringify(stateB).includes(a.memberToken),false);
+  assert.equal((await call('/api/profile/places',b.memberToken)).status,401);
+  assert.deepEqual((await call('/api/profile/places','account-b')).data.places,[]);
+  assert.equal((await call('/api/profile/places','account-a')).data.places[0].name,'A 개인 장소');
+});

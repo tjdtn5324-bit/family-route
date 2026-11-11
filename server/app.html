@@ -156,7 +156,7 @@ details.more summary{min-height:50px;display:flex;align-items:center;font-weight
       <section class="card" id="roomCard">
         <span class="tag" id="roomTag">함께 준비하는 여행</span>
         <h2 id="roomName" style="margin-top:8px"></h2>
-        <div class="chips" id="memberChips"></div>
+        <p id="participantName" class="note"></p><button type="button" class="btn soft" id="changeParticipant">다른 이름으로 참여</button><div class="chips" id="memberChips"></div>
         <p class="note warm" id="roomExpiry" hidden></p>
         <div class="row"><button class="btn" id="inviteBtn" type="button"></button><button class="btn soft" id="pairBtn" type="button"></button></div>
       </section>
@@ -381,7 +381,7 @@ async function profileApi(path, method = 'GET', data, headers) {
   if (!r.ok) throw Error(r.body.error || '요청을 처리하지 못했어요.');
   return r.body;
 }
-function forgetLogin() { for (const k of [ACCESS, REFRESH]) { local.del(k); tab.del(k); } profile.places = []; profile.loaded = false; profile.memories = null; profile.likes = new Set(); }
+function forgetLogin() { for (const k of [ACCESS, REFRESH]) { local.del(k); tab.del(k); } profile.epoch++; profile.places = []; profile.drafts = []; profile.open = null; profile.loaded = false; profile.memories = null; profile.likes = new Set(); profile.likesLoaded = false; }
 
 // ───────── 이 휴대폰의 가족방 기록 (기기 안에서 암호화) ─────────
 let history_ = [], historyDb = null, keyPromise = null;
@@ -561,7 +561,7 @@ let lastStatus = new Map(), carLinkSeen;
 function renderHome() {
   $('myRoomsHome').hidden = !history_.length;
   if (changed('homeRooms', [history_, state?.room.id])) $('myRoomsHomeList').replaceChildren(...history_.map(roomRow));
-  const inRoom = !!state;
+  const inRoom = !!state && !pendingInvite;
   $('onboard').hidden = inRoom || (!!room.token && !pendingInvite);
   $('homeRoom').hidden = !inRoom;
   $('connecting').hidden = inRoom || !$('onboard').hidden;
@@ -581,6 +581,7 @@ function renderHome() {
     if (closing) $('roomExpiry').textContent = '이 가족방은 ' + new Date(s.room.expiresAt).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) + '쯤 닫혀요. 제안이나 사진을 올리면 12시간 더 열려 있어요.';
     $('pairBtn').lastChild.textContent = s.room.carLinkedAt ? '차량 연결됨' : '차량 연결';
     $('roomName').textContent = s.room.name;
+    $('participantName').textContent = s.me.name + '님으로 참여 중';
     $('roomTag').textContent = s.itinerary ? '여행 중' : s.completedTrip ? '다녀온 여행' : '함께 준비하는 여행';
     $('memberChips').replaceChildren(...s.members.map(m => h('span', { class: 'chip', text: m.name + (m.id === s.me.id ? ' (나)' : '') })));
   }
@@ -784,7 +785,7 @@ async function shareInvite() {
       btn('초대 링크 복사',()=>copyAddress(url),'full'),
       btn('카톡·문자로 공유하기',async()=>{if(!navigator.share)return copyAddress(url);try{await navigator.share({title:'아빠어디가 초대',url});}catch(e){if(e.name!=='AbortError')throw e;}},'soft full'),
       btn('10분 초대 코드 보기',async()=>{const c=await roomApi('/api/rooms/invite-code','POST',{});info.textContent=c.code.slice(0,5)+' '+c.code.slice(5)+' · '+new Date(c.expiresAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})+'까지. 홈페이지의 초대 코드로 참여하기에 입력해 주세요. 차량 연결 코드와 달라요.';},'soft full'),info,
-      h('p',{class:'sub',text:'가족에게만 공유해 주세요. 코드는 서버 재시작 시 만료돼요.'}),btn('홈페이지 주소 · 접속 안내',accessHelp,'line full'));
+      h('p',{class:'sub',text:'받은 사람은 본인 이름으로 참여해요. 가족에게만 공유해 주세요. 코드는 10분 동안 유효해요.'}),btn('홈페이지 주소 · 접속 안내',accessHelp,'line full'));
   });
 }
 function joinByCode(){openSheet('초대 코드로 참여하기',body=>{
@@ -1081,12 +1082,13 @@ async function openReviews(course, onChange) {
 }
 
 // ───────── 내 장소 ─────────
-const profile = { places: [], drafts: [], loaded: false, loading: null, memories: null, likes: new Set(), likesLoaded: false, view: 'folders', open: null };
+const profile = { epoch: 0, places: [], drafts: [], loaded: false, loading: null, memories: null, likes: new Set(), likesLoaded: false, view: 'folders', open: null };
 async function loadProfile(force) {
   if (!signedIn()) { renderMine(); return; }
   if (profile.loaded && !force) { renderMine(); return; }
   if (!profile.loading) profile.loading = (async () => {
-    try { profile.places = (await profileApi('/api/profile/places')).places; profile.loaded = true; }
+    const epoch = profile.epoch;
+    try { const result = await profileApi('/api/profile/places'); if (epoch !== profile.epoch || !signedIn()) return; profile.places = result.places; profile.loaded = true; }
     catch (e) { if (signedIn()) toast(e.message, true); }
     finally { profile.loading = null; renderMine(); }
   })();
@@ -1272,21 +1274,58 @@ $('joinBtn').replaceWith(Object.assign(btn('가족방 참여하기', async () =>
   const invite = pendingInvite; pendingInvite = ''; history.replaceState(null, '', location.pathname);
   await enterRoom(r.body.memberToken, invite); toast('가족방에 참여했어요.');
 }, 'full'), { id: 'joinBtn' }));
+$('changeParticipant').onclick = () => {
+  if (!room.invite) { toast('새 초대 링크를 받아 주세요.', true); return; }
+  const invite = room.invite;
+  openSheet('다른 이름으로 참여', body => {
+    const name = h('input', {maxlength:30, placeholder:'본인 이름', autocomplete:'off'});
+    body.append(h('p', {class:'sub', text:'이 가족방에서 사용할 이름을 적어 주세요. 개인 저장 장소는 내 장소의 로그인 계정으로 관리돼요.'}), name, btn('이 이름으로 참여', async () => {
+      if (!name.value.trim()) throw Error('본인 이름을 적어 주세요.');
+      const r = await send('/api/join', {method:'POST', data:{invite, name:name.value.trim()}});
+      if (!r.ok) throw Error(r.body.error || '참여하지 못했어요.');
+      await enterRoom(r.body.memberToken, invite); showTab('home');
+    }, 'full'));
+  });
+};
 $('joinName').addEventListener('keydown', e => { if (e.key === 'Enter') $('joinBtn').click(); });
 $('createInstead').onclick = () => { wantsNewTrip = true; pendingInvite = ''; history.replaceState(null, '', location.pathname); renderHome(); };
 document.addEventListener('visibilitychange', () => { if (!document.hidden && room.token) refreshNow().catch(() => {}); });
+
+async function showInviteParticipant() {
+  document.querySelectorAll('[data-return-participant]').forEach(el => el.remove());
+  if (pendingInvite) {
+    const known = history_.find(x => x.invite === pendingInvite);
+    if (known) {
+      try {
+        const r = await send('/api/state', { token: known.token });
+        if (r.ok) {
+          const returnButton = btn(r.body.me.name + '님으로 계속하기', async () => {
+            pendingInvite = ''; history.replaceState(null, '', location.pathname);
+            await enterRoom(known.token, known.invite);
+          }, 'soft full');
+          const note = h('p', {class:'note', text:'이 브라우저에 남아 있는 참가 기록이에요. 다른 사람이라면 위에 본인 이름을 적어 참여하세요.'});
+          note.dataset.returnParticipant = 'true'; returnButton.dataset.returnParticipant = 'true';
+          $('joinCard').append(note, returnButton);
+        }
+      } catch {}
+    }
+  }
+  renderAll();
+}
+window.addEventListener('hashchange', () => {
+  const next = new URLSearchParams(location.hash.slice(1)).get('invite');
+  if (!next) return;
+  pendingInvite = next;
+  closeSheet(); showTab('home');
+  showInviteParticipant().catch(e => toast(e.message, true));
+});
 
 (async function start() {
   try { const r = await send('/api/profile/config'); if (r.ok) config = r.body; } catch {}
   const cameFromLogin = new URLSearchParams(location.search).has('code');
   await finishLogin();
   await loadHistory();
-  if (pendingInvite) {
-    const known = history_.find(x => x.invite === pendingInvite);
-    if (known) {
-      try { const r = await send('/api/state', { token: known.token }); if (r.ok) { pendingInvite = ''; history.replaceState(null, '', location.pathname); await enterRoom(known.token, known.invite); } } catch {}
-    }
-  }
+  await showInviteParticipant();
   if (!pendingInvite && !room.token) {
     const wanted = local.get(CURRENT);
     const entry = history_.find(x => x.id === wanted) || history_[0];
