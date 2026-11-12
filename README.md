@@ -14,7 +14,7 @@
 | **② 제출 APK 파일** | [`apk/familyroute_아빠어디가_release.apk`](apk/familyroute_아빠어디가_release.apk) (Release 빌드 및 서명 완료, SHA-256 검증 파일 [`apk/SHA256SUMS`](apk/SHA256SUMS) 포함) |
 | **③ 빌드 및 실행 방법** | 시연 서버(`node tools/preview-phone.mjs 8789`) 실행 후 APK 설치(`adb install -r "apk/familyroute_아빠어디가_release.apk"`) 또는 Gradle 빌드(`.\gradlew.bat :app:assembleRelease`) |
 | **④ 테스트 환경 및 규격** | **Pleos Connect Emulator v2.1.0** (`2560×1440` 해상도), Android Automotive OS (minSdk 28 / targetSdk 34), Kotlin + Jetpack Compose, Node.js 24+ |
-| **⑤ 필요 설정 및 검증** | 별도 유료 API 키 없이 즉시 동작하는 로컬 모의 검색·경로 및 PC 재부팅 시에도 유지되는 AES-256-GCM 암호화 아카이브 영속성 탑재, **서버 자동 테스트 29개 및 Android 단위 테스트 전수 통과** |
+| **⑤ 필요 설정 및 검증** | 별도 유료 API 키 없이 즉시 동작하는 로컬 모의 검색·경로 및 PC 재부팅 시에도 유지되는 AES-256-GCM 암호화 아카이브 영속성 탑재, **서버 자동 테스트 30개 및 Android 단위 테스트 전수 통과** |
 
 ---
 
@@ -37,6 +37,7 @@
 | **탑승 즉시 원터치 출발 (차량)** | 가족이 휴대폰에서 준비 완료한 코스를 차량이 실시간 감지해 자동 표시 → **이 코스로 출발 / 가족 제안 담고 출발(`quick-start`)** 원터치 실행 |
 | **경유지 도착 가족 이야기 & 한국어 TTS 브리핑 (차량)** | 경유지 도착 및 정차(P) 시 해당 장소를 제안한 가족의 방문 이유와 메시지가 카드 모달로 열리며 **한국어 TTS(`TextToSpeech`) 음성 브리핑**으로 낭독 |
 | **주행 안전 모드 (차량 `ParkingGuard`)** | `CarPropertyManager`의 `PERF_VEHICLE_SPEED`·`GEAR_SELECTION` 연동. 주행(`!parked`) 전환 시 모든 팝업·서브 화면을 즉시 닫고 좌측 카드를 **다음 경유지 1곳 요약 + 주행 안전 안내(Compact Driving Mode)** 로 축소. 주행 중 새 제안 도착 시 화면 조작 없이 **한국어 TTS 음성 안내**만 제공 후 자동 닫힘 |
+| **코스 취소 (차량·휴대폰)** | 출발 후 `여행 종료 → 출발 취소`로 준비 중 상태로 되돌리고(`cancel-start`), 출발 전 `여행 취소`에서 코스만 비우거나(`clear-course`, 가족이 한마디를 남긴 곳은 제안으로 유지) 여행방을 지울 수 있음 |
 | **추천 여행 코스 & 경유지 편집 (차량·휴대폰)** | 참고 코스 및 다른 가족이 공개한 커뮤니티 인기·최신 코스를 탐색하고, 원하는 경유지를 빼거나 추가·순서 변경해 단독 길안내 또는 가족 여행방 코스로 즉시 적용 |
 | **가족 추억 앨범 & 커뮤니티 공유 (휴대폰)** | 마친 여행이 추억 앨범에 영구 보관되어 방문지·가족 메시지·사진을 다시 감상하고, 우리 가족의 다녀온 여행을 커뮤니티 추천 코스로 공개·좋아요·후기 작성 가능 |
 
@@ -121,7 +122,7 @@ npm --prefix server test
 .\gradlew.bat :app:testDebugUnitTest :app:assembleRelease
 ```
 
-- **서버 자동 테스트 29개 전수 통과**:
+- **서버 자동 테스트 30개 전수 통과**:
   - `server/v2/p0.test.mjs`: P0 핵심 권한·보안·격리 점검 8개 항목 통과
   - `server/v2/flow.test.mjs`: 3인 가족 여행 생성 → 제안·공감·댓글 → 출발·경유지 도착·사진·앨범·커뮤니티 코스 공개 및 차량 온보딩(`createFamilyFromVehicle`, `createTripFromVehicle`), 사전 코스 준비(`readyForCar`), 원터치 출발(`quick-start`), 영속화 복구까지 검증 완료
   - `server/place-search.test.mjs`, `server/directions.test.mjs`: 장소 검색·경로 모듈 테스트 통과
