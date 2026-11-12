@@ -482,6 +482,7 @@ function routeView(t) {
   const actions = [];
   if ((t.canManage || t.status === 'PLANNING') && t.status !== 'DONE' && t.destination && t.stops.length < 5) actions.push(btn('경유지 바로 추가하기', openAddStop, 'line', 'plus'));
   if (t.canManage && t.status === 'PLANNING') actions.push(t.destination ? btn('출발하기', async () => { await reload(await api('/api/trips/' + t.id + '/start', { data: {} })); toast('출발했어요. 들르는 곳에 도착하면 "도착"을 눌러 가족의 이야기를 확인해요.'); }) : h('p', { class: 'note warn', text: '목적지를 정하면 출발할 수 있어요.' }));
+  if (t.canManage && t.status === 'ONGOING') actions.push(btn('출발 취소', async () => { if (!await confirmSheet('출발 취소', '여행을 준비 중으로 되돌려요. 다녀온 표시만 지워지고 제안과 사진은 그대로예요.', '출발 취소', true)) return; await reload(await api('/api/trips/' + t.id + '/cancel-start', { data: {} })); toast('출발을 취소했어요. 준비 중으로 돌아왔어요.'); }, 'line'));
   if (t.canManage && t.status === 'ONGOING') actions.push(btn('여행 마치기', async () => { if (!await confirmSheet('여행 마치기', '여행을 마치면 추억 앨범으로 옮겨져요. 사진은 나중에도 올릴 수 있어요.', '여행 마치기')) return; await reload(await api('/api/trips/' + t.id + '/finish', { data: {} })); S.tripTab = 'memory'; renderTrip(); toast('여행을 마쳤어요. 추억 앨범에 담겼어요.'); }, 'soft'));
   return h('div', {}, h('div', { class: 'card' }, h('h2', { text: '우리 가족 여행 경로' }), list),
     t.status === 'ONGOING' ? h('p', { class: 'note', text: '실제 길 안내는 연결된 차량 화면에서 해요. 운전 중에는 휴대폰을 만지지 말고, 정차한 뒤 확인해 주세요.' }) : h('p', { class: 'note', text: '여기서 코스를 다듬고 "차량 출발 준비 완료"를 누르면 차에 타자마자 바로 출발할 수 있어요.' }),

@@ -721,6 +721,25 @@ export class Service {
     t.status = 'DONE'; t.finishedAt = this.#now();
     return this.tripDetail(actor, t.id);
   }
+  /** 출발을 취소하고 '준비 중'으로 되돌린다(실수로 출발했거나 일정이 바뀌었을 때). 다녀온 표시만 지우고 제안·이야기·사진은 그대로 둔다. */
+  cancelStart(actor, tripId) {
+    const t = this.#trip(actor, tripId); this.#requireManage(actor, t);
+    if (t.status !== 'ONGOING') fail(409, '출발한 여행만 출발을 취소할 수 있어요');
+    t.status = 'PLANNING'; t.startedAt = null;
+    for (const id of t.stops) { const p = this.#proposals.get(id); if (p && p.status === 'VISITED') { p.status = 'CONFIRMED'; p.visitedAt = null; } }
+    return this.tripDetail(actor, t.id);
+  }
+  /** 코스를 비우고 처음부터 다시 짠다. 가족이 한마디를 남긴 곳은 '제안'으로 되돌려 이야기를 남기고, 나머지 들르는 곳과 목적지는 뺀다. */
+  async clearCourse(actor, tripId) {
+    const t = this.#trip(actor, tripId); this.#requireManage(actor, t);
+    if (t.status !== 'PLANNING') fail(409, t.status === 'ONGOING' ? '출발한 뒤에는 코스를 비울 수 없어요. 출발을 먼저 취소해 주세요' : '끝난 여행은 바꿀 수 없어요');
+    const old = [...t.stops];
+    await this.#reroute(t, null, []);
+    for (const id of old) { const p = this.#proposals.get(id); if (!p) continue; if (p.message) p.status = 'PROPOSED'; else this.#proposals.delete(id); }
+    for (const q of this.#proposals.values()) if (q.tripId === t.id && q.kind === 'DESTINATION' && q.status === 'CONFIRMED') q.status = 'PROPOSED';
+    t.readyForCar = false; t.readyAt = null; t.readyBy = null; t.courseId = null; t.courseTitle = null;
+    return this.tripDetail(actor, t.id);
+  }
 
   // ───────── 사진·추억 ─────────
   addPhoto(actor, tripId, { data, proposalId = null, caption = '' }) {

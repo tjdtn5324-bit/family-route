@@ -122,7 +122,7 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
         if (method === 'GET') return send(200, service.tripDetail(actor(), p[1]));
         if (method === 'DELETE') return await write(() => service.deleteTrip(actor(), p[1]));
       }
-      if ((p = m(/^\/api\/trips\/([\w-]{36})\/(update|proposals|stops|course|order|ready|quick-start|start|finish|photos)$/)) && method === 'POST') {
+      if ((p = m(/^\/api\/trips\/([\w-]{36})\/(update|proposals|stops|course|clear-course|order|ready|quick-start|start|cancel-start|finish|photos)$/)) && method === 'POST') {
         const [, id, action] = p;
         if (action === 'update') return await write(async () => service.updateTrip(actor(), id, await body()));
         if (action === 'proposals') return await write(async () => service.proposePlace(actor(), id, await body()), 201);
@@ -132,6 +132,8 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
         if (action === 'ready') return await write(async () => service.setTripReady(actor(), id, await body()));
         if (action === 'quick-start') return await write(async () => { await body(); return service.quickStartTrip(actor(), id); });
         if (action === 'start') return await write(async () => { await body(); return service.startTrip(actor(), id); });
+        if (action === 'cancel-start') return await write(async () => { await body(); return service.cancelStart(actor(), id); });
+        if (action === 'clear-course') return await write(async () => { await body(); return service.clearCourse(actor(), id); });
         if (action === 'finish') return await write(async () => { await body(); return service.finishTrip(actor(), id); });
         if (action === 'photos') return await write(async () => service.addPhoto(actor(), id, await body(360000)), 201);
       }

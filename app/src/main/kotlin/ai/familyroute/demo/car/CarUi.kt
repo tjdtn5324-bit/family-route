@@ -121,7 +121,7 @@ fun NavItem(icon: Int, label: String, selected: Boolean, enabled: Boolean = true
 
 /** 들르는 곳과 도착지를 순서대로 보여 준다. 마지막 항목이 도착지다. */
 @Composable
-fun StopList(names: List<String>, onNavy: Boolean = false) {
+fun StopList(names: List<String>, onNavy: Boolean = false, notes: List<String> = emptyList()) {
     val main = if (onNavy) Color.White else CarColors.Navy
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         names.forEachIndexed { i, name ->
@@ -131,7 +131,11 @@ fun StopList(names: List<String>, onNavy: Boolean = false) {
                     if (last) Image(painterResource(R.drawable.ic_flag), contentDescription = "도착지", colorFilter = ColorFilter.tint(if (onNavy) CarColors.Navy else Color.White), modifier = Modifier.size(20.dp))
                     else T((i + 1).toString(), 18, FontWeight.Bold, main)
                 }
-                T(name, 21, if (last) FontWeight.Bold else FontWeight.Medium, main, Modifier.weight(1f), maxLines = 1)
+                Column(Modifier.weight(1f)) {
+                    T(name, 21, if (last) FontWeight.Bold else FontWeight.Medium, main, maxLines = 1)
+                    val note = notes.getOrNull(i).orEmpty()
+                    if (note.isNotBlank()) T(note, 16, color = if (onNavy) CarColors.OnNavySub else CarColors.Sub, maxLines = 1)
+                }
             }
         }
     }

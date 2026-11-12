@@ -106,6 +106,12 @@ class CarApi(private val server: String = BuildConfig.FAMILY_SERVER_URL.trimEnd(
         parseTrip(request("/api/trips/$tripId/ready", token, JSONObject().put("ready", ready).put("autoConfirmPending", autoConfirmPending)))
     suspend fun quickStart(token: String, tripId: String): TripDetail = parseTrip(request("/api/trips/$tripId/quick-start", token, JSONObject()))
     suspend fun start(token: String, tripId: String): TripDetail = parseTrip(request("/api/trips/$tripId/start", token, JSONObject()))
+    /** 출발을 취소하고 '준비 중'으로 되돌린다. */
+    suspend fun cancelStart(token: String, tripId: String): TripDetail = parseTrip(request("/api/trips/$tripId/cancel-start", token, JSONObject()))
+    /** 목적지와 들르는 곳을 모두 비운다. 가족이 한마디를 남긴 곳은 제안으로 돌아간다. */
+    suspend fun clearCourse(token: String, tripId: String): TripDetail = parseTrip(request("/api/trips/$tripId/clear-course", token, JSONObject()))
+    /** 여행방을 지운다. 제안과 사진도 함께 사라진다. */
+    suspend fun deleteTrip(token: String, tripId: String) { request("/api/trips/$tripId", token, method = "DELETE") }
     suspend fun finish(token: String, tripId: String): TripDetail = parseTrip(request("/api/trips/$tripId/finish", token, JSONObject()))
     suspend fun arrive(token: String, proposalId: String): Arrival {
         val r = request("/api/proposals/$proposalId/arrive", token, JSONObject())
@@ -164,8 +170,7 @@ class CarApi(private val server: String = BuildConfig.FAMILY_SERVER_URL.trimEnd(
 internal fun JSONObject.toCommentLine(): String {
     val byObj = optJSONObject("by")
     val author = byObj?.optString("name", "가족") ?: optString("by", "가족")
-    val avatar = byObj?.optString("avatar", "😊") ?: optString("avatar", "😊")
-    return "$avatar $author: ${optString("text")}"
+    return "$author: ${optString("text")}"
 }
 internal fun JSONObject.optStringOrNull(key: String): String? = if (isNull(key) || !has(key)) null else optString(key).takeIf { it.isNotBlank() }
 internal fun JSONObject.toPlace() = Place(getString("name"), optString("address"), getDouble("latitude"), getDouble("longitude"))

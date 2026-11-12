@@ -125,3 +125,24 @@ test('출발 전 가족이 인스타 스토리형 제안·리액션·한마디�
   assert.equal(arrived.storyCards[0].comments[0].text, '우리 민지 소원 꼭 들어주자!');
 });
 
+
+test('출발 취소는 준비 중으로 되돌리고, 코스 비우기는 한마디가 있는 곳만 제안으로 남긴다', async () => {
+  const { s, dad, mom, kid } = await family();
+  let trip = await s.createTrip(dad, { title: '취소 연습', destination: place('부산역', 35.115), driverUserId: dad.user.id });
+  trip = s.proposePlace(mom, trip.id, { place: place('광안리 카페', 35.153), reason: '바다 보며 커피', message: '여보 여기 꼭 가요' });
+  trip = await s.decide(dad, trip.proposals[0].id, { decision: 'CONFIRM' });
+  trip = await s.addStop(dad, trip.id, { place: place('휴게소', 36.2) });
+  const car = s.vehicleActor(s.pairVehicle({ code: s.vehicleCode(dad).code, name: '아빠 차' }).vehicleToken);
+  assert.throws(() => s.cancelStart(car, trip.id), e => e.status === 409);
+  s.startTrip(car, trip.id);
+  s.arriveAt(car, trip.stops[0].id);
+  assert.throws(() => s.cancelStart(kid, trip.id), e => e.status === 403);
+  await assert.rejects(s.clearCourse(car, trip.id), e => e.status === 409);
+  trip = s.cancelStart(car, trip.id);
+  assert.equal(trip.status, 'PLANNING'); assert.equal(trip.startedAt, null);
+  assert.deepEqual(trip.stops.map(p => p.status), ['CONFIRMED', 'CONFIRMED']);
+  trip = s.startTrip(car, trip.id); trip = s.cancelStart(car, trip.id);
+  trip = await s.clearCourse(car, trip.id);
+  assert.equal(trip.destination, null); assert.equal(trip.stops.length, 0); assert.equal(trip.route, null); assert.equal(trip.readyForCar, false);
+  assert.deepEqual(trip.proposals.map(p => [p.place.name, p.status]), [['광안리 카페', 'PROPOSED']]);
+});

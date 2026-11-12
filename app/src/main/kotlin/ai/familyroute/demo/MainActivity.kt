@@ -131,6 +131,7 @@ class MainActivity : ComponentActivity() {
             var arrival by remember { mutableStateOf<Arrival?>(null) }
             var confirmFinish by remember { mutableStateOf(false) }
             var confirmUnpair by remember { mutableStateOf(false) }
+            var confirmCancelTrip by remember { mutableStateOf(false) }
             var pendingDestination by remember { mutableStateOf<Place?>(null) }
             var code by remember { mutableStateOf("") }
             var carName by remember { mutableStateOf("우리 차") }
@@ -164,7 +165,7 @@ class MainActivity : ComponentActivity() {
             }
             fun forget(message: String) {
                 linkStore.clear(); link = null; family = null; trips = emptyList(); trip = null; tripId = null; incoming = null; arrival = null
-                confirmFinish = false; confirmUnpair = false; pendingDestination = null; showQrDialog = false; showCreateTrip = false
+                confirmFinish = false; confirmUnpair = false; confirmCancelTrip = false; pendingDestination = null; showQrDialog = false; showCreateTrip = false
                 if (screen == Screen.TRIPS) screen = Screen.MAP; notice = message
             }
             /** 한 번에 하나씩 실행하고 실패 이유를 알려 준다. 401이면 가족 연결이 끝난 것이다. */
@@ -257,10 +258,10 @@ class MainActivity : ComponentActivity() {
             }
             LaunchedEffect(parked) {
                 if (!parked) {
-                    if (screen != Screen.MAP || arrival != null || confirmFinish || confirmUnpair || pendingDestination != null || showQrDialog || openCourse != null || showCreateTrip) {
+                    if (screen != Screen.MAP || arrival != null || confirmFinish || confirmUnpair || confirmCancelTrip || pendingDestination != null || showQrDialog || openCourse != null || showCreateTrip) {
                         notice = "출발해서 화면을 닫았어요."
                     }
-                    screen = Screen.MAP; arrival = null; confirmFinish = false; confirmUnpair = false; pendingDestination = null; showQrDialog = false
+                    screen = Screen.MAP; arrival = null; confirmFinish = false; confirmUnpair = false; confirmCancelTrip = false; pendingDestination = null; showQrDialog = false
                     openCourse = null; courseAddingStop = false; addingStopToSolo = false; showCreateTrip = false
                     tts.stop()
                 }
@@ -385,7 +386,8 @@ class MainActivity : ComponentActivity() {
                                             val pending = remember(t) { t.ideas.filter { it.status == "PROPOSED" } }
                                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                                 Tag(statusLabel(t.status), if (t.status == "ONGOING") Color.White else Color(0x33FFFFFF), if (t.status == "ONGOING") CarColors.Navy else Color.White)
-                                                if (t.readyForCar && t.status == "PLANNING") Tag("출발 준비 완료", Color(0xFFFF8A3D), Color.White)
+                                                if (t.readyForCar && t.status == "PLANNING") Tag(t.readyByName?.takeIf { it.isNotBlank() && it != "차량" && it != "떠난 가족" }?.let { "${it.take(8)}님이 준비 완료" } ?: "출발 준비 완료", Color(0xFFFF8A3D), Color.White)
+                                                if (t.status == "ONGOING" && t.stops.isNotEmpty()) Tag("${t.stops.count { it.status == "VISITED" }}/${t.stops.size}곳 다녀옴", Color(0x33FFFFFF), Color.White)
                                                 if (pending.isNotEmpty()) Tag("새 제안 ${pending.size}곳", Color(0x33FF8A3D), Color(0xFFFFD08A))
                                             }
                                             T(t.title, 30, FontWeight.Black, Color.White, maxLines = 2)
@@ -396,7 +398,9 @@ class MainActivity : ComponentActivity() {
                                                 else -> "목적지를 아직 정하지 않았어요"
                                             }, 21, FontWeight.Bold, CarColors.OnNavySub)
                                             if (parked) {
-                                                StopList(t.stops.map { (if (it.status == "VISITED") "✓ " else "") + it.place.name } + listOfNotNull(t.destination?.name), onNavy = true)
+                                                // 들르는 곳마다 누가 왜 가고 싶어 했는지 함께 보여 준다(추천 코스나 차에서 바로 넣은 곳은 이름만).
+                                                val stopNotes = t.stops.map { p -> if (p.reason.startsWith("추천 코스") || p.reason.endsWith("추가한 경유지")) "" else "${p.byName}님" + (if (p.reason.isNotBlank()) " · ${p.reason}" else "") }
+                                                StopList(t.stops.map { (if (it.status == "VISITED") "✓ " else "") + it.place.name } + listOfNotNull(t.destination?.name), onNavy = true, notes = stopNotes)
                                                 val next = t.stops.firstOrNull { it.status != "VISITED" }
                                                 val needsDestination = t.status == "PLANNING" && t.destination == null && pending.isEmpty()
                                                 // 이 카드의 큰 버튼은 지금 할 일 하나뿐이다: 출발 또는 도착.
@@ -414,13 +418,17 @@ class MainActivity : ComponentActivity() {
                                                         }
                                                     }
                                                 }
-                                                if (t.status == "ONGOING" && next != null) CarButton("${next.place.name} 도착", Modifier.fillMaxWidth(), Btn.OnNavyStrong, enabled = !busy) { run { val a = api.arrive(token, next.id); trip = a.trip; arrival = a } }
+                                                if (t.status == "ONGOING") {
+                                                    if (next != null) CarButton("${next.place.name} 도착", Modifier.fillMaxWidth(), Btn.OnNavyStrong, enabled = !busy) { run { val a = api.arrive(token, next.id); trip = a.trip; arrival = a } }
+                                                    else CarButton("목적지 도착 · 여행 마치기", Modifier.fillMaxWidth(), Btn.OnNavyStrong, enabled = !busy, icon = R.drawable.ic_flag) { confirmFinish = true }
+                                                }
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     CarButton(if (needsDestination) "목적지 정하기" else "코스 편집", Modifier.weight(1f), if (needsDestination) Btn.OnNavyStrong else Btn.OnNavy, enabled = !busy) {
                                                         tripsTab = if (pending.isNotEmpty()) 0 else if (t.destination == null) 2 else 1
                                                         showCreateTrip = false; screen = Screen.TRIPS; error = ""; results = emptyList(); query = ""
                                                     }
-                                                    if (t.status == "ONGOING") CarButton("여행 마치기", Modifier.weight(1f), Btn.OnNavy, enabled = !busy) { confirmFinish = true }
+                                                    // 취소: 출발 뒤에는 마치기·출발 취소를, 출발 전에는 코스 비우기·여행방 지우기를 고른다.
+                                                    CarButton(if (t.status == "ONGOING") "여행 종료" else "여행 취소", Modifier.weight(1f), Btn.OnNavy, enabled = !busy) { if (t.status == "ONGOING") confirmFinish = true else confirmCancelTrip = true }
                                                 }
                                             } else {
                                                 val nextTarget = t.stops.firstOrNull { it.status != "VISITED" }?.place?.name ?: t.destination?.name ?: "목적지 미정"
@@ -882,6 +890,7 @@ class MainActivity : ComponentActivity() {
                             T("${s.by}님의 이야기", 21, FontWeight.Bold)
                             if (s.reason.isNotBlank()) T("가고 싶었던 이유 · ${s.reason}", 20, color = CarColors.Ink)
                             if (s.message.isNotBlank()) T("가족에게 · ${s.message}", 20, color = CarColors.Ink)
+                            s.comments.take(2).forEach { c -> T(c, 17, color = CarColors.Sub, maxLines = 1) }
                         }
                     }
                     T("사진은 가족이 휴대폰에서 이 장소에 올릴 수 있어요.", 17, color = CarColors.Sub)
@@ -917,10 +926,22 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 if (confirmFinish && parked && tk != null && current != null) CenterDialog {
-                    T("여행을 마칠까요?", 30, FontWeight.Black)
-                    T("마치면 이 여행은 가족의 추억 앨범으로 옮겨져요. 들르지 못한 곳도 기록에 남아요.", 20, color = CarColors.Sub)
+                    T("여행을 끝낼까요?", 30, FontWeight.Black)
+                    T("마치면 가족의 추억 앨범에 담겨요. 잘못 출발했다면 출발만 취소해 준비 중으로 되돌릴 수 있어요.", 20, color = CarColors.Sub)
                     CarButton("계속 여행하기", Modifier.fillMaxWidth()) { confirmFinish = false }
-                    CarButton("여행 마치기", Modifier.fillMaxWidth(), Btn.Soft, enabled = !busy) { run { api.finish(tk, current.id); confirmFinish = false; trip = null; updateTripId(null); notice = "여행을 마쳤어요. 가족의 추억 앨범에 담겼어요." } }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CarButton("여행 마치기", Modifier.weight(1f), Btn.Soft, enabled = !busy) { run { api.finish(tk, current.id); confirmFinish = false; trip = null; updateTripId(null); notice = "여행을 마쳤어요. 가족의 추억 앨범에 담겼어요." } }
+                        CarButton("출발 취소", Modifier.weight(1f), Btn.Danger, enabled = !busy) { run { trip = api.cancelStart(tk, current.id); trips = api.trips(tk); confirmFinish = false; notice = "출발을 취소했어요. 준비 중으로 돌아왔어요." } }
+                    }
+                }
+                if (confirmCancelTrip && parked && tk != null && current != null) CenterDialog {
+                    T("‘${current.title}’ 여행을 취소할까요?", 30, FontWeight.Black, maxLines = 2)
+                    T("코스만 비우면 가족이 남긴 한마디는 제안으로 남아요. 여행방을 지우면 제안과 사진까지 모두 사라져요.", 20, color = CarColors.Ink)
+                    CarButton("그대로 두기", Modifier.fillMaxWidth()) { confirmCancelTrip = false }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CarButton("코스만 비우기", Modifier.weight(1f), Btn.Soft, enabled = !busy && (current.destination != null || current.stops.isNotEmpty())) { run { trip = api.clearCourse(tk, current.id); trips = api.trips(tk); confirmCancelTrip = false; notice = "코스를 비웠어요. 목적지부터 다시 정해 보세요." } }
+                        CarButton("여행방 지우기", Modifier.weight(1f), Btn.Danger, enabled = !busy) { run { api.deleteTrip(tk, current.id); confirmCancelTrip = false; trip = null; updateTripId(null); trips = api.trips(tk); notice = "여행방을 지웠어요." } }
+                    }
                 }
                 val place = pendingDestination
                 if (place != null && parked && tk != null && current != null) CenterDialog {
