@@ -89,3 +89,39 @@ test('저장했다가 다시 불러와도 계정·가족·여행·세션이 그�
   assert.equal(actor.family.name, '우리 가족'); assert.equal(restored.listTrips(actor)[0].title, '저장 확인');
   assert.equal((await restored.login({ email: 'dad@x.com', password: 'password-1234' })).user.name, '아빠');
 });
+
+test('출발 전 가족이 인스타 스토리형 제안·리액션·한마디를 남기고, 차에 타자마자 원터치로 코스를 확정해 출발할 수 있다', async () => {
+  const { s, dad, mom, kid } = await family();
+  let trip = await s.createTrip(dad, { title: '강릉 가족 바다 여행', destination: place('강릉 안목해변', 37.772) });
+  // 엄마와 민지가 설렘 테마(mood)와 이유·타임캡슐 메시지를 남긴다
+  trip = s.proposePlace(mom, trip.id, { place: place('강릉 중앙시장', 37.754), reason: '닭강정이랑 오징어순대 먹어요', message: '시장 입구에서 인증샷 찍기!', mood: '🍦 꼭 먹고 싶은 간식·맛집' });
+  trip = s.proposePlace(kid, trip.id, { place: place('대관령 양떼목장', 37.688), reason: '양들한테 건초 주고 싶어요', message: '아빠 운전 고마워요 ❤️', mood: '🎈 아이가 손꼽아 기다린 곳' });
+
+  // 가족들이 인스타 스토리처럼 이모지 리액션과 한마디 댓글을 남긴다
+  const kidPropId = trip.proposals[1].id;
+  trip = s.reactProposal(dad, kidPropId, { emoji: '❤️' });
+  trip = s.reactProposal(mom, kidPropId, { emoji: '🤩' });
+  trip = s.commentProposal(mom, kidPropId, { text: '우리 민지 소원 꼭 들어주자!' });
+  const kidProp = trip.proposals.find(p => p.id === kidPropId);
+  assert.equal(kidProp.totalReactions, 2);
+  assert.equal(kidProp.comments.length, 1);
+  assert.equal(kidProp.by.avatar, '👧');
+
+  // 일반 구성원(엄마)도 출발 전에 '차량 탑승 준비 완료(setTripReady)'를 눌러 제안을 모두 코스에 반영할 수 있다
+  trip = await s.setTripReady(mom, trip.id, { ready: true, autoConfirmPending: true });
+  assert.equal(trip.readyForCar, true);
+  assert.equal(trip.stops.length, 2);
+  // 리액션이 더 많은 민지의 양떼목장이 1번 경유지로 자동 배치된다
+  assert.equal(trip.stops[0].place.name, '대관령 양떼목장');
+
+  // PC 재부팅 스냅샷 복원 후에도 readyForCar, 리액션, 코멘트, 스토리가 그대로 유지되고 차량에서 바로 출발 가능
+  const pair = s.pairVehicle({ code: s.vehicleCode(dad).code, name: '가족 카니발' });
+  const restored = Service.fromSnapshot(JSON.parse(JSON.stringify(s.exportSnapshot())));
+  const car = restored.vehicleActor(pair.vehicleToken);
+  const started = await restored.quickStartTrip(car, trip.id);
+  assert.equal(started.status, 'ONGOING');
+  const arrived = restored.arriveAt(car, started.stops[0].id);
+  assert.equal(arrived.storyCards[0].mood, '🎈 아이가 손꼽아 기다린 곳');
+  assert.equal(arrived.storyCards[0].comments[0].text, '우리 민지 소원 꼭 들어주자!');
+});
+

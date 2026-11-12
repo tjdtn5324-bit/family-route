@@ -41,6 +41,7 @@ try {
                         }
                     }
                     if (!$tunnel) {
+                        $deadChecks = 0
                         Start-Process -WindowStyle Hidden -FilePath $TunnelPath -ArgumentList @('tunnel','--no-autoupdate','--protocol','http2','--metrics','127.0.0.1:20241','--url','http://127.0.0.1:8789') -RedirectStandardError (Join-Path $state 'tunnel-error.log')
                     }
                 }

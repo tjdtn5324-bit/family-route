@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -13,6 +14,9 @@ import javax.crypto.spec.GCMParameterSpec
 
 /** 이 차량이 연결된 가족 정보. 토큰은 차량 접근 권한이므로 Android Keystore 키로 암호화해 둔다. */
 data class SavedLink(val token: String, val familyName: String, val vehicleName: String)
+
+/** 앱이나 에뮬레이터를 껐다 켜도 안내 중이던 추천 코스·경유지·경로가 유지되도록 기기에 저장하는 자료. */
+data class SavedSoloDrive(val place: Place, val route: RouteLine, val stops: List<Place> = emptyList(), val courseTitle: String? = null)
 
 class VehicleLink(context: Context) {
     private val prefs = context.getSharedPreferences("vehicle_link_v2", Context.MODE_PRIVATE)
@@ -39,5 +43,34 @@ class VehicleLink(context: Context) {
         val plain = JSONObject().put("token", link.token).put("family", link.familyName).put("vehicle", link.vehicleName).toString().toByteArray(Charsets.UTF_8)
         prefs.edit().putString("link", Base64.encodeToString(cipher.iv + cipher.doFinal(plain), Base64.NO_WRAP)).commit()
     } catch (_: Exception) { false }
-    fun clear() { prefs.edit().clear().commit() }
+    fun clear() { prefs.edit().remove("link").remove("trip_id").commit() }
+
+    fun loadTripId(): String? = prefs.getString("trip_id", null)?.takeIf { it.isNotBlank() }
+    fun saveTripId(tripId: String?) {
+        if (tripId.isNullOrBlank()) prefs.edit().remove("trip_id").apply()
+        else prefs.edit().putString("trip_id", tripId).apply()
+    }
+
+    fun loadSolo(): SavedSoloDrive? = try {
+        val raw = prefs.getString("solo_drive", null) ?: return null
+        val o = JSONObject(raw)
+        val r = o.getJSONObject("route")
+        val s = o.optJSONArray("stops") ?: JSONArray()
+        SavedSoloDrive(
+            place = o.getJSONObject("place").toPlace(),
+            route = RouteLine(r.getString("pointsJson"), r.optInt("distance"), r.optInt("duration"), 0),
+            stops = (0 until s.length()).map { s.getJSONObject(it).toPlace() },
+            courseTitle = o.optStringOrNull("courseTitle")
+        )
+    } catch (_: Exception) { null }
+
+    fun saveSolo(solo: SavedSoloDrive?) {
+        if (solo == null) { prefs.edit().remove("solo_drive").apply(); return }
+        val o = JSONObject()
+            .put("place", solo.place.toJson())
+            .put("route", JSONObject().put("pointsJson", solo.route.pointsJson).put("distance", solo.route.distance).put("duration", solo.route.duration))
+            .put("stops", JSONArray().also { a -> solo.stops.forEach { a.put(it.toJson()) } })
+            .apply { if (!solo.courseTitle.isNullOrBlank()) put("courseTitle", solo.courseTitle) }
+        prefs.edit().putString("solo_drive", o.toString()).apply()
+    }
 }

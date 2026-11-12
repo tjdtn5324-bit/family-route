@@ -208,3 +208,44 @@ test('차량은 가족이 준 숫자 6자리로만 연결되고, 스스로 연�
   assert.equal((await car.call('/api/trips', { bearer: token })).status, 401);
   assert.equal((await a.call('/api/me')).body.family.vehicles.length, 0);
 });
+
+test('차량 OS에서 가족방과 여행방을 먼저 만들고, 발급된 초대 코드(QR)로 휴대폰 참가자들이 참여할 수 있다', async t => {
+  const { base } = await start(t), car = browser(base), dad = browser(base), mom = browser(base);
+  const created = (await car.call('/api/vehicle/family', { data: { familyName: '주말 나들이 가족방', vehicleName: '아빠 차' } }));
+  assert.equal(created.status, 201);
+  const token = created.body.vehicleToken;
+  const inviteCode = created.body.family.inviteCode;
+  assert.match(inviteCode, /^[A-Z0-9]{8}$/);
+
+  // 차량에서 여행방도 바로 만들 수 있다
+  const tripCreated = await car.call('/api/vehicle/trips', {
+    data: { title: '강릉 바다 가족여행', destination: { name: '강릉 안목해변', address: '강원 강릉시', latitude: 37.7726, longitude: 128.9472 } },
+    bearer: token
+  });
+  assert.equal(tripCreated.status, 201);
+  assert.equal(tripCreated.body.title, '강릉 바다 가족여행');
+
+  // 휴대폰 참가자 1(아빠)이 로그인 후 QR 초대 코드로 미리보기 후 참여 -> 첫 참가자는 자동으로 관리자(ADMIN)가 된다
+  await signup(dad, 'dad@example.com', '아빠');
+  const preview = (await dad.call(`/api/family/invite?code=${inviteCode}`)).body;
+  assert.equal(preview.familyName, '주말 나들이 가족방');
+  assert.equal(preview.memberCount, 0);
+  const dadJoined = await dad.call('/api/family/join', { data: { code: inviteCode } });
+  assert.equal(dadJoined.status, 200);
+  assert.equal(dadJoined.body.myRole, 'ADMIN');
+
+  // 휴대폰 참가자 2(엄마)도 같은 QR 초대 코드로 참여 -> 일반 구성원(MEMBER)으로 참여하고 같은 여행방을 본다
+  await signup(mom, 'mom@example.com', '엄마');
+  const momJoined = await mom.call('/api/family/join', { data: { code: inviteCode } });
+  assert.equal(momJoined.status, 200);
+  assert.equal(momJoined.body.myRole, 'MEMBER');
+  const momTrips = (await mom.call('/api/trips')).body.trips;
+  assert.equal(momTrips.length, 1);
+  assert.equal(momTrips[0].title, '강릉 바다 가족여행');
+
+  // 차량 홈에서도 참가자 2명과 현재 초대 코드가 보인다
+  const home = (await car.call('/api/vehicle/home', { bearer: token })).body;
+  assert.equal(home.family.members.length, 2);
+  assert.equal(home.family.inviteCode, inviteCode);
+});
+

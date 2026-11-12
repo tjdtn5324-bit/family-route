@@ -46,7 +46,7 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
       const source = req.socket.remoteAddress || '';
       const local = ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(source);
       const ip = local && typeof req.headers['cf-connecting-ip'] === 'string' ? req.headers['cf-connecting-ip'].slice(0, 80) : source;
-      const category = /^\/api\/auth\/(login|signup)$/.test(path) ? 'auth' : path === '/api/vehicle/pair' ? 'pair' : path === '/api/places' || path === '/api/drive/route' ? 'search' : method === 'GET' ? 'read' : 'write';
+      const category = /^\/api\/auth\/(login|signup)$/.test(path) ? 'auth' : (path === '/api/vehicle/pair' || path === '/api/vehicle/family') ? 'pair' : path === '/api/places' || path === '/api/drive/route' ? 'search' : method === 'GET' ? 'read' : 'write';
       const max = { auth: 10, pair: 5, search: 30, read: 600, write: 120 }[category];
       const now = Date.now(), key = ip + ':' + category;
       if (limits.size > 20000) for (const [k, v] of limits) if (v.until <= now) limits.delete(k);
@@ -87,7 +87,10 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
 
       // ── 차량 ──
       if (method === 'POST' && path === '/api/vehicle/pair') return await write(async () => service.pairVehicle(await body()), 201);
-      if (method === 'GET' && path === '/api/vehicle/home') return send(200, service.vehicleHome(service.vehicleActor(bearer)));
+      if (method === 'POST' && path === '/api/vehicle/family') return await write(async () => service.createFamilyFromVehicle(await body()), 201);
+      if (method === 'POST' && path === '/api/vehicle/invite') return await write(async () => { await body(); return service.vehicleInvite(service.vehicleActor(bearer)); });
+      if (method === 'POST' && path === '/api/vehicle/trips') return await write(async () => service.createTripFromVehicle(service.vehicleActor(bearer), await body()), 201);
+      if (method === 'GET' && path === '/api/vehicle/home') return await write(() => service.vehicleHome(service.vehicleActor(bearer)));
       if (method === 'DELETE' && path === '/api/vehicle/pair') return await write(() => service.unpairSelf(service.vehicleActor(bearer)));
 
       // ── 장소 검색과 혼자 운전하는 경로 ──
@@ -96,6 +99,22 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
       if (method === 'GET' && path === '/api/places') { if (!search) throw new HttpError(503, '장소 검색을 지금 쓸 수 없어요'); return send(200, { places: await search(url.searchParams.get('q'), { apiKey }) }); }
       if (method === 'POST' && path === '/api/drive/route') return send(200, await service.soloRoute(await body()));
 
+      // ── 추천 코스 ──
+      // 둘러보기는 로그인 없이도 된다(차량 포함). 좋아요·후기·공개는 휴대폰 로그인이 필요하다.
+      const viewer = () => { try { return actor(); } catch (e) { if (e instanceof HttpError && e.status === 401) return null; throw e; } };
+      if (method === 'GET' && path === '/api/courses') return send(200, { courses: service.listCourses(viewer(), { sort: url.searchParams.get('sort') || 'trending', kind: url.searchParams.get('kind') || '', q: url.searchParams.get('q') || '' }) });
+      if (method === 'POST' && path === '/api/courses') return await write(async () => service.publishCourse(user(), await body()), 201);
+      if ((p = m(/^\/api\/courses\/([\w-]{3,64})$/))) {
+        if (method === 'GET') return send(200, service.courseDetail(viewer(), p[1]));
+        if (method === 'DELETE') return await write(() => service.unpublishCourse(user(), p[1]));
+      }
+      if ((p = m(/^\/api\/courses\/([\w-]{3,64})\/(like|reviews)$/))) {
+        const [, id, action] = p;
+        if (method === 'POST' && action === 'like') return await write(async () => service.likeCourse(user(), id, await body()));
+        if (method === 'POST' && action === 'reviews') return await write(async () => service.reviewCourse(user(), id, await body()));
+        if (method === 'DELETE' && action === 'reviews') return await write(() => service.deleteMyReview(user(), id));
+      }
+
       // ── 여행 ──
       if (method === 'GET' && path === '/api/trips') return send(200, { trips: service.listTrips(actor()) });
       if (method === 'POST' && path === '/api/trips') return await write(async () => service.createTrip(actor(), await body()), 201);
@@ -103,19 +122,25 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
         if (method === 'GET') return send(200, service.tripDetail(actor(), p[1]));
         if (method === 'DELETE') return await write(() => service.deleteTrip(actor(), p[1]));
       }
-      if ((p = m(/^\/api\/trips\/([\w-]{36})\/(update|proposals|order|start|finish|photos)$/)) && method === 'POST') {
+      if ((p = m(/^\/api\/trips\/([\w-]{36})\/(update|proposals|stops|course|order|ready|quick-start|start|finish|photos)$/)) && method === 'POST') {
         const [, id, action] = p;
         if (action === 'update') return await write(async () => service.updateTrip(actor(), id, await body()));
         if (action === 'proposals') return await write(async () => service.proposePlace(actor(), id, await body()), 201);
+        if (action === 'stops') return await write(async () => service.addStop(actor(), id, await body()), 201);
+        if (action === 'course') return await write(async () => service.applyCourse(actor(), id, await body()));
         if (action === 'order') return await write(async () => service.reorderStops(actor(), id, await body()));
+        if (action === 'ready') return await write(async () => service.setTripReady(actor(), id, await body()));
+        if (action === 'quick-start') return await write(async () => { await body(); return service.quickStartTrip(actor(), id); });
         if (action === 'start') return await write(async () => { await body(); return service.startTrip(actor(), id); });
         if (action === 'finish') return await write(async () => { await body(); return service.finishTrip(actor(), id); });
         if (action === 'photos') return await write(async () => service.addPhoto(actor(), id, await body(360000)), 201);
       }
-      if ((p = m(/^\/api\/proposals\/([\w-]{36})(\/(vote|decide|arrive))?$/))) {
+      if ((p = m(/^\/api\/proposals\/([\w-]{36})(\/(vote|react|comment|decide|arrive))?$/))) {
         const [, id, , action] = p;
         if (method === 'DELETE' && !action) return await write(() => service.removeProposal(actor(), id));
         if (method === 'POST' && action === 'vote') return await write(async () => service.vote(actor(), id, await body()));
+        if (method === 'POST' && action === 'react') return await write(async () => service.reactProposal(actor(), id, await body()));
+        if (method === 'POST' && action === 'comment') return await write(async () => service.commentProposal(actor(), id, await body()));
         if (method === 'POST' && action === 'decide') return await write(async () => service.decide(actor(), id, await body()));
         if (method === 'POST' && action === 'arrive') return await write(async () => { await body(); return service.arriveAt(actor(), id); });
       }

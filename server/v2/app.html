@@ -66,7 +66,35 @@ input:focus,textarea:focus,select:focus{border-color:var(--accent);background:#f
 .item{padding:14px 0;border-top:1px solid var(--line)}
 .item:first-child{border-top:0;padding-top:2px}
 .item strong{display:block;font-size:17px;overflow-wrap:anywhere}
-.quote{background:var(--field);border-radius:12px;padding:10px 12px;margin-top:8px;font-size:15px;overflow-wrap:anywhere}
+.quote{background:#fff8f1;border-left:3.5px solid #ff8e53;border-radius:12px;padding:11px 14px;margin-top:8px;font-size:15px;overflow-wrap:anywhere}
+/* 인스타 스토리 링 트레이 & 풀스크린 스토리 뷰어 */
+.story-tray{display:flex;gap:14px;overflow-x:auto;padding:14px 2px 6px;margin-top:8px;scrollbar-width:none}
+.story-tray::-webkit-scrollbar{display:none}
+.story-item{flex:none;width:74px;text-align:center;background:none;border:0;padding:0;cursor:pointer;color:var(--text);font:inherit}
+.story-ring{width:66px;height:66px;border-radius:50%;padding:3px;background:linear-gradient(135deg,#ff6b6b 0%,#ff9f43 52%,#ffd166 100%);margin:0 auto 6px;display:grid;place-items:center;position:relative;box-shadow:0 4px 12px #ff6b6b2e}
+.story-ring.visited{background:linear-gradient(135deg,#0a7a55 0%,#00aad2 100%);box-shadow:0 4px 12px #00aad229}
+.story-ring.all{background:linear-gradient(135deg,#002c5f 0%,#00aad2 50%,#ff8e53 100%)}
+.story-inner{width:100%;height:100%;border-radius:50%;background:#fff;display:grid;place-items:center;font-size:26px;overflow:hidden;border:2px solid #fff}
+.story-inner img{width:100%;height:100%;object-fit:cover}
+.story-badge{position:absolute;right:-2px;bottom:-2px;background:#fff;border-radius:999px;padding:1px 5px;font-size:12px;box-shadow:0 2px 6px #0002}
+.story-label{display:block;font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.ready-card{background:linear-gradient(135deg,#fff8f0 0%,#eef7ff 100%);border:1.5px solid #ffd8b8;border-radius:18px;padding:16px 18px;margin-top:14px}
+.ready-card.done{background:linear-gradient(135deg,#e8f8f1 0%,#eef7ff 100%);border-color:#9fe0c6}
+.react-row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.react-chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 11px;font:inherit;font-size:14px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:4px}
+.react-chip.on{background:#fff0ec;border-color:#ff6b6b;color:#c0392b}
+.mood-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.mood-btn{border:1.5px solid var(--line);background:#fff;border-radius:999px;padding:7px 13px;font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+.mood-btn.on{background:#fff4ec;border-color:#ff8e53;color:#b34700}
+#storyModal{background:#101928;color:#fff;width:100vw;height:100vh;max-width:none;max-height:none;margin:0;padding:0;overflow:hidden}
+.st-wrap{position:relative;width:100%;height:100%;max-width:520px;margin:0 auto;display:flex;flex-direction:column;justify-content:space-between;padding:calc(14px + env(safe-area-inset-top)) 18px calc(20px + env(safe-area-inset-bottom));background:linear-gradient(165deg,#16243b 0%,#2b1d38 55%,#4a2535 100%);background-size:cover;background-position:center}
+.st-bars{display:flex;gap:5px;z-index:2}
+.st-bar{flex:1;height:3.5px;background:#ffffff40;border-radius:99px;overflow:hidden}
+.st-bar>span{display:block;height:100%;background:#fff;width:0%;transition:width .15s linear}
+.st-head{display:flex;align-items:center;gap:10px;margin-top:12px;z-index:2}
+.st-avatar{width:42px;height:42px;border-radius:50%;background:#ffffff24;display:grid;place-items:center;font-size:22px}
+.st-card{background:#0b1524cc;backdrop-filter:blur(10px);border:1px solid #ffffff26;border-radius:22px;padding:20px;z-index:2;margin:auto 0}
+.st-foot{z-index:2}
 .empty{text-align:center;color:var(--sub);padding:26px 8px}
 .empty svg{width:42px;height:42px;stroke:#b7c1cc;margin-bottom:8px}
 .section-title{display:flex;align-items:center;justify-content:space-between;margin-top:26px}
@@ -129,7 +157,9 @@ const ICON = {
   family: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M16 14.3c2.8.2 5 2.6 5 5.7"/>',
   back: '<path d="m15 5-7 7 7 7"/>', close: '<path d="M6 6l12 12M18 6 6 18"/>', plus: '<path d="M12 5v14M5 12h14"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4.5 4.5"/>', share: '<path d="M12 15V4m0 0L8 8m4-4 4 4"/><path d="M5 13v5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5"/>',
-  car: '<path d="M4 16v-3l2-5.5A2 2 0 0 1 7.9 6h8.2a2 2 0 0 1 1.9 1.5L20 13v3"/><rect x="3" y="13" width="18" height="5" rx="1.5"/>', flag: '<path d="M6 21V4m0 1h11l-2.5 4L17 13H6"/>'
+  car: '<path d="M4 16v-3l2-5.5A2 2 0 0 1 7.9 6h8.2a2 2 0 0 1 1.9 1.5L20 13v3"/><rect x="3" y="13" width="18" height="5" rx="1.5"/>', flag: '<path d="M6 21V4m0 1h11l-2.5 4L17 13H6"/>',
+  compass: '<circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/>',
+  heart: '<path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10z"/>'
 };
 const svg = (name, extra = '') => { const s = document.createElement('span'); s.style.display = 'contents'; s.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" ${extra}>${ICON[name]}</svg>`; return s.firstChild; };
 function h(tag, attrs, ...kids) {
@@ -176,7 +206,7 @@ function clearUrl() { if (location.search || location.hash) history.replaceState
 function resetToLogin(message) { S.me = null; clearInterval(pollTimer); renderAuth('login', message); }
 function setTabs(show) {
   $('tabs').hidden = !show; if (!show) return;
-  const tabs = [['trips', '여행', 'trip'], ['album', '추억 앨범', 'album'], ['family', '우리 가족', 'family']];
+  const tabs = [['trips', '여행', 'trip'], ['courses', '추천 코스', 'compass'], ['album', '추억 앨범', 'album'], ['family', '우리 가족', 'family']];
   $('tabsIn').replaceChildren(...tabs.map(([key, label, icon]) => { const b = h('button', { type: 'button', 'aria-current': S.tab === key && !S.view ? 'page' : null }, svg(icon), label); b.onclick = () => go(key); return b; }));
 }
 function topBar(title, onBack) {
@@ -185,7 +215,7 @@ function topBar(title, onBack) {
 }
 function screen(title, onBack, ...content) { clearInterval(pollTimer); $('app').replaceChildren(topBar(title, onBack), h('main', { class: 'wrap' }, ...content)); window.scrollTo(0, 0); }
 function empty(icon, text, action) { return h('div', { class: 'empty' }, svg(icon), h('p', { text }), action ? h('div', { class: 'mt' }, action) : null); }
-async function go(tab) { S.tab = tab; S.view = null; if (tab === 'trips') await showTrips(); else if (tab === 'album') await showAlbum(); else await showFamily(); }
+async function go(tab) { S.tab = tab; S.view = null; if (tab === 'trips') await showTrips(); else if (tab === 'courses') await showCourses(); else if (tab === 'album') await showAlbum(); else await showFamily(); }
 
 // ───────── 시트(아래에서 올라오는 창) ─────────
 function openSheet(title, build) { $('sheetTitle').textContent = title; $('sheetBody').replaceChildren(); build($('sheetBody')); if (!$('sheet').open) $('sheet').showModal(); $('sheet').scrollTop = 0; }
@@ -266,7 +296,7 @@ async function showJoin(code) {
   setTabs(false);
   const already = preview.alreadyMember, other = S.me.family && !already;
   screen('가족 초대', () => boot(),
-    h('div', { class: 'card' }, h('span', { class: 'chip', text: '초대받은 가족' }), h('h1', { class: 'mt', text: preview.familyName }), h('p', { class: 'sub', text: '지금 ' + preview.memberCount + '명이 함께하고 있어요.' }),
+    h('div', { class: 'card' }, h('span', { class: 'chip', text: '초대받은 가족' }), h('h1', { class: 'mt', text: preview.familyName }), h('p', { class: 'sub', text: preview.memberCount ? '지금 ' + preview.memberCount + '명이 함께하고 있어요.' : '차량에서 만든 가족방이에요. 참여하면 가족들과 여행을 함께 준비할 수 있어요.' }),
       already ? h('p', { class: 'note', text: '이미 이 가족에 속해 있어요.' }) : other ? h('p', { class: 'note warn', text: '지금 "' + S.me.family.name + '"에 속해 있어요. 다른 가족에 참여하려면 우리 가족 화면에서 먼저 나와 주세요.' }) : null,
       h('div', { class: 'mt2' }, already || other ? btn('돌아가기', () => boot(), 'line') : btn(preview.familyName + '에 참여하기', async () => { await api('/api/family/join', { data: { code } }); toast(preview.familyName + '에 참여했어요.'); S.tab = 'trips'; await boot(); }))));
 }
@@ -288,7 +318,7 @@ async function showTrips() {
 function tripCard(t) {
   const [label, tone] = STATUS[t.status];
   const card = h('button', { class: 'card tap', type: 'button' },
-    h('div', { class: 'row' }, h('span', { class: 'chip ' + tone, text: label }), h('span', { class: 'sub', text: fmtDate(t.date) })),
+    h('div', { class: 'row wrapx' }, h('span', { class: 'chip ' + tone, text: label }), t.readyForCar && t.status === 'PLANNING' ? h('span', { class: 'chip ok', text: '차량 출발 준비 완료' }) : null, h('span', { class: 'sub', text: fmtDate(t.date) })),
     h('h2', { class: 'mt', text: t.title }),
     h('p', { class: 'sub', text: t.destination ? '목적지 · ' + t.destination.name : '목적지를 아직 정하지 않았어요' }),
     h('div', { class: 'stat' }, h('span', {}, '들르는 곳 ', h('b', { text: String(t.stopCount) })), h('span', {}, '새 제안 ', h('b', { text: String(t.pendingCount) })), t.driver ? h('span', {}, '운전 ', h('b', { text: t.driver.name })) : null));
@@ -344,6 +374,29 @@ async function showTrip(id, tab) {
     try { const next = await api('/api/trips/' + id); if (JSON.stringify(next) !== JSON.stringify(S.trip)) { S.trip = next; renderTrip(true); } } catch {}
   }, 4000);
 }
+function readyBanner(t) {
+  if (t.status !== 'PLANNING') return null;
+  const pending = t.proposals.filter(p => p.status === 'PROPOSED');
+  if (t.readyForCar && pending.length === 0) {
+    return h('div', { class: 'ready-card done' },
+      h('div', { class: 'row wrapx' }, h('span', { class: 'chip ok', text: '차량 탑승 준비 완료' }), t.readyBy ? h('span', { class: 'sub', text: t.readyBy.name + '님이 코스 준비' }) : null),
+      h('h3', { class: 'mt', text: '차에 타자마자 첫 화면에서 바로 출발할 수 있어요!' }),
+      h('p', { class: 'sub', text: [t.origin.name, ...t.stops.map(s => s.place.name), t.destination?.name || '목적지'].join(' → ') }),
+      h('div', { class: 'row mt' },
+        btn('코스 다시 다듬기', async () => reload(await api('/api/trips/' + t.id + '/ready', { data: { ready: false, autoConfirmPending: false } })), 'small line')));
+  }
+  return h('div', { class: 'ready-card' },
+    h('div', { class: 'row wrapx' }, h('span', { class: 'chip warn', text: '출발 전 우리 가족 코스 짜기' }), h('span', { class: 'sub', text: '들르는 곳 ' + t.stops.length + '/5 · 대기 제안 ' + pending.length + '곳' })),
+    h('h3', { class: 'mt', text: pending.length ? '가족이 제안한 ' + pending.length + '곳을 합쳐 코스를 완성할까요?' : '코스를 완성해 두면 차에 타자마자 바로 안내가 시작돼요' }),
+    h('p', { class: 'sub', text: '가족 누구나 가고 싶은 곳을 제안하고, 아래 버튼을 누르면 차량 화면에 바로 출발 가능한 코스로 세팅돼요.' }),
+    h('div', { class: 'row mt wrapx' },
+      btn(pending.length ? '제안 모두 담고 차량 출발 준비 완료' : '이 코스로 차량 출발 준비 완료', async () => {
+        const next = await api('/api/trips/' + t.id + '/ready', { data: { ready: true, autoConfirmPending: true } });
+        await reload(next);
+        toast('차량 출발 준비 완료! 차에 타면 바로 안내를 시작할 수 있어요.');
+      }),
+      btn('+ 가고 싶은 곳 제안하기', openPropose, 'line')));
+}
 function renderTrip(keepScroll) {
   const t = S.trip, y = window.scrollY, [label, tone] = STATUS[t.status];
   const tabs = t.status === 'DONE' ? [['memory', '추억'], ['photos', '사진']] : [['ideas', '장소 제안'], ['route', '길 안내'], ['photos', '사진']];
@@ -351,10 +404,11 @@ function renderTrip(keepScroll) {
   const seg = h('div', { class: 'seg', role: 'tablist' }, ...tabs.map(([k, l]) => h('button', { type: 'button', 'aria-pressed': String(S.tripTab === k), text: l, onclick: () => { S.tripTab = k; renderTrip(); } })));
   const body = S.tripTab === 'ideas' ? ideasView(t) : S.tripTab === 'route' ? routeView(t) : S.tripTab === 'memory' ? memoryView(t) : photosView(t);
   screen(t.title, () => { S.view = null; go(t.status === 'DONE' ? 'album' : 'trips'); },
-    h('div', { class: 'row' }, h('span', { class: 'chip ' + tone, text: label }), h('span', { class: 'sub', text: fmtDate(t.date) + (t.driver ? ' · 운전 ' + t.driver.name : '') })),
+    h('div', { class: 'row wrapx' }, h('span', { class: 'chip ' + tone, text: label }), t.readyForCar && t.status === 'PLANNING' ? h('span', { class: 'chip ok', text: '차량 출발 준비 완료' }) : null, h('span', { class: 'sub', text: fmtDate(t.date) + (t.driver ? ' · 운전 ' + t.driver.name : '') })),
     h('p', { class: 'sub mt', text: (t.destination ? '서울 출발 → ' + t.destination.name : '목적지를 아직 정하지 않았어요') + (t.route ? ' · ' + km(t.route.distance) + ', 약 ' + mins(t.route.duration) : '') }),
     t.routeError ? h('p', { class: 'note warn', text: t.routeError }) : null,
     t.canManage && t.status !== 'DONE' ? h('div', { class: 'row mt' }, h('button', { class: 'link', type: 'button', text: '여행 정보 바꾸기', onclick: openEditTrip })) : null,
+    readyBanner(t),
     seg, body);
   if (keepScroll) window.scrollTo(0, y);
 }
@@ -365,16 +419,19 @@ function ideasView(t) {
   const pending = t.proposals.filter(p => p.status === 'PROPOSED'), done = t.proposals.filter(p => p.status !== 'PROPOSED');
   return h('div', {},
     h('div', { class: 'mt2' }, btn('가고 싶은 곳 제안하기', openPropose, '', 'plus')),
-    h('div', { class: 'section-title' }, h('h2', { text: '기다리는 제안 ' + pending.length })),
+    h('div', { class: 'section-title' }, h('h2', { text: '가족의 제안 ' + pending.length })),
     pending.length ? pending.map(p => proposalCard(p, t)) : h('div', { class: 'card' }, empty('trip', '가족이 가고 싶은 곳을 아직 제안하지 않았어요.')),
     t.stops.length ? [h('div', { class: 'section-title' }, h('h2', { text: '경로에 담긴 곳 ' + t.stops.length })), t.stops.map(p => proposalCard(p, t))] : null,
     done.length ? [h('div', { class: 'section-title' }, h('h2', { text: '지난 제안' })), done.map(p => proposalCard(p, t))] : null);
 }
-const P_STATUS = { PROPOSED: ['운전자 결정 기다림', 'warn'], CONFIRMED: ['경로에 담김', 'ok'], VISITED: ['다녀옴', 'ok'], DECLINED: ['이번엔 안 가요', 'gray'], REPLACED: ['목적지가 바뀜', 'gray'] };
+const P_STATUS = { PROPOSED: ['검토 중', 'warn'], CONFIRMED: ['경로에 담김', 'ok'], VISITED: ['다녀옴', 'ok'], DECLINED: ['이번엔 안 가요', 'gray'], REPLACED: ['목적지가 바뀜', 'gray'] };
 function proposalCard(p, t) {
   const [label, tone] = P_STATUS[p.status];
   const card = h('div', { class: 'card' },
-    h('div', { class: 'row wrapx' }, h('span', { class: 'chip ' + tone, text: label }), p.kind === 'DESTINATION' ? h('span', { class: 'chip', text: '목적지 제안' }) : null, h('span', { class: 'sub', text: p.by.name + '님' })),
+    h('div', { class: 'row wrapx' },
+      h('span', { class: 'chip ' + tone, text: label }),
+      p.kind === 'DESTINATION' ? h('span', { class: 'chip', text: '목적지 제안' }) : null,
+      h('span', { class: 'sub', text: p.by.name + '님' })),
     h('h3', { class: 'mt', text: p.place.name }), p.place.address ? h('p', { class: 'sub', text: p.place.address }) : null,
     p.reason ? h('div', { class: 'quote' }, h('b', { text: '가고 싶은 이유 · ' }), p.reason) : null,
     p.message ? h('div', { class: 'quote' }, h('b', { text: '가족에게 · ' }), p.message) : null);
@@ -389,18 +446,19 @@ function proposalCard(p, t) {
   return card;
 }
 function openPropose() {
-  openSheet('가고 싶은 곳 제안', body => {
+  openSheet('가고 싶은 곳 제안하기', body => {
     const pick = place => {
       body.replaceChildren();
-      const reason = h('textarea', { id: 'reason', maxlength: 200, placeholder: '예: 바다를 보며 쉬고 싶어요' });
-      const message = h('textarea', { id: 'message', maxlength: 300, placeholder: '예: 할머니랑 같이 사진 찍어요!' });
+      const reason = h('textarea', { id: 'reason', maxlength: 200, placeholder: '예: 바다 보며 커피 마시고 싶어요' });
+      const message = h('textarea', { id: 'message', maxlength: 300, placeholder: '예: 도착하면 여기서 가족 사진 찍자!' });
       let kind = 'STOP';
-      const kinds = h('div', {}, ...[['STOP', '가는 길에 들르기'], ['DESTINATION', '여기를 목적지로']].map(([v, l]) => { const r = h('input', { type: 'radio', name: 'kind', value: v, checked: v === 'STOP' }); r.onchange = () => { kind = v; }; return h('label', { class: 'radio' }, r, l); }));
+      const kinds = h('div', {}, ...[['STOP', '가는 길에 들르기'], ['DESTINATION', '여행 목적지로 바꾸기']].map(([v, l]) => { const r = h('input', { type: 'radio', name: 'kind', value: v, checked: v === 'STOP' }); r.onchange = () => { kind = v; }; return h('label', { class: 'radio' }, r, l); }));
       body.append(h('div', { class: 'card' }, h('strong', { text: place.name }), h('p', { class: 'sub', text: place.address })), kinds,
-        h('label', { for: 'reason', text: '가고 싶은 이유' }), reason, h('label', { for: 'message', text: '가족에게 남길 말 (그곳에 도착하면 보여요)' }), message,
-        h('div', { class: 'mt2' }, btn('가족에게 제안하기', async () => { await reload(await api('/api/trips/' + S.trip.id + '/proposals', { data: { place, reason: reason.value, message: message.value, kind } })); closeSheet(); toast(eul(place.name) + ' 제안했어요.'); })));
+        h('label', { for: 'reason', text: '가고 싶은 이유' }), reason,
+        h('label', { for: 'message', text: '도착하면 보여 줄 한마디 (정차했을 때 나타나요)' }), message,
+        h('div', { class: 'mt2' }, btn('제안 올리기', async () => { await reload(await api('/api/trips/' + S.trip.id + '/proposals', { data: { place, reason: reason.value, message: message.value, kind } })); closeSheet(); toast(eul(place.name) + ' 제안했어요.'); })));
     };
-    body.append(h('p', { class: 'sub', text: '장소를 찾아 고른 뒤, 가고 싶은 이유와 가족에게 남길 말을 적어 주세요.' }), h('div', { class: 'mt' }, placeSearch(pick)));
+    body.append(h('p', { class: 'sub', text: '장소를 찾아 고른 뒤, 가고 싶은 이유와 도착했을 때 가족에게 보여 줄 한마디를 남겨 주세요.' }), h('div', { class: 'mt' }, placeSearch(pick)));
   });
 }
 
@@ -410,19 +468,33 @@ function routeView(t) {
   t.stops.forEach((p, i) => {
     const row = h('li', {}, h('span', { class: 'dot ' + (p.status === 'VISITED' ? 'done' : ''), text: p.status === 'VISITED' ? '✓' : String(i + 1) }),
       h('div', { class: 'grow' }, h('strong', { text: p.place.name }), h('p', { class: 'sub', text: p.by.name + '님 제안' + (p.status === 'VISITED' ? ' · 다녀왔어요' : '') })));
-    if (t.canManage && t.status === 'PLANNING') row.append(h('div', { class: 'row' },
-      i > 0 ? h('button', { class: 'btn small line', type: 'button', text: '위로', onclick: () => reorder(i, -1) }) : null,
-      i < t.stops.length - 1 ? h('button', { class: 'btn small line', type: 'button', text: '아래로', onclick: () => reorder(i, 1) }) : null));
-    if (t.canManage && t.status === 'ONGOING' && p.status !== 'VISITED') row.append(btn('도착', () => arrive(p), 'small soft'));
+    if ((t.canManage || t.status === 'PLANNING') && t.status !== 'DONE') {
+      const controls = h('div', { class: 'row wrapx' });
+      if (t.canManage && i > 0) controls.append(h('button', { class: 'btn small line', type: 'button', text: '위로', onclick: () => reorder(i, -1) }));
+      if (t.canManage && i < t.stops.length - 1) controls.append(h('button', { class: 'btn small line', type: 'button', text: '아래로', onclick: () => reorder(i, 1) }));
+      if (t.canManage && p.status !== 'VISITED') controls.append(h('button', { class: 'btn small danger', type: 'button', text: '빼기', onclick: async () => { try { await reload(await api('/api/proposals/' + p.id, { method: 'DELETE' })); toast(eul(p.place.name) + ' 경로에서 뺐어요.'); } catch (e) { toast(e.message, true); } } }));
+      if (t.canManage && t.status === 'ONGOING' && p.status !== 'VISITED') controls.append(btn('도착', () => arrive(p), 'small soft'));
+      row.append(controls);
+    }
     list.append(row);
   });
   list.append(h('li', {}, h('span', { class: 'dot end' }, svg('flag')), h('div', { class: 'grow' }, h('strong', { text: t.destination ? t.destination.name : '목적지 미정' }), h('p', { class: 'sub', text: '도착지' }))));
   const actions = [];
+  if ((t.canManage || t.status === 'PLANNING') && t.status !== 'DONE' && t.destination && t.stops.length < 5) actions.push(btn('경유지 바로 추가하기', openAddStop, 'line', 'plus'));
   if (t.canManage && t.status === 'PLANNING') actions.push(t.destination ? btn('출발하기', async () => { await reload(await api('/api/trips/' + t.id + '/start', { data: {} })); toast('출발했어요. 들르는 곳에 도착하면 "도착"을 눌러 가족의 이야기를 확인해요.'); }) : h('p', { class: 'note warn', text: '목적지를 정하면 출발할 수 있어요.' }));
   if (t.canManage && t.status === 'ONGOING') actions.push(btn('여행 마치기', async () => { if (!await confirmSheet('여행 마치기', '여행을 마치면 추억 앨범으로 옮겨져요. 사진은 나중에도 올릴 수 있어요.', '여행 마치기')) return; await reload(await api('/api/trips/' + t.id + '/finish', { data: {} })); S.tripTab = 'memory'; renderTrip(); toast('여행을 마쳤어요. 추억 앨범에 담겼어요.'); }, 'soft'));
-  return h('div', {}, h('div', { class: 'card' }, h('h2', { text: '우리 길' }), list),
-    t.status === 'ONGOING' ? h('p', { class: 'note', text: '실제 길 안내는 연결된 차량 화면에서 해요. 운전 중에는 휴대폰을 만지지 말고, 정차한 뒤 확인해 주세요.' }) : h('p', { class: 'note', text: '경로는 시연 출발지(서울) 기준이에요. 실시간 차량 위치는 아직 반영하지 않아요.' }),
-    actions.length ? h('div', { class: 'mt' }, ...actions) : null);
+  return h('div', {}, h('div', { class: 'card' }, h('h2', { text: '우리 가족 여행 경로' }), list),
+    t.status === 'ONGOING' ? h('p', { class: 'note', text: '실제 길 안내는 연결된 차량 화면에서 해요. 운전 중에는 휴대폰을 만지지 말고, 정차한 뒤 확인해 주세요.' }) : h('p', { class: 'note', text: '여기서 코스를 다듬고 "차량 출발 준비 완료"를 누르면 차에 타자마자 바로 출발할 수 있어요.' }),
+    actions.length ? h('div', { class: 'mt', style: 'display:grid;gap:10px' }, ...actions) : null);
+}
+function openAddStop() {
+  openSheet('경유지 바로 추가', body => {
+    body.append(h('p', { class: 'sub', text: '중간에 들를 장소를 찾으면 바로 우리 가족 코스에 추가하고 경로를 다시 계산해요.' }),
+      h('div', { class: 'mt' }, placeSearch(async place => {
+        await reload(await api('/api/trips/' + S.trip.id + '/stops', { data: { place } }));
+        closeSheet(); toast(eul(place.name) + ' 경유지로 추가했어요.');
+      })));
+  });
 }
 async function reorder(i, d) { const ids = S.trip.stops.map(p => p.id); [ids[i], ids[i + d]] = [ids[i + d], ids[i]]; try { await reload(await api('/api/trips/' + S.trip.id + '/order', { data: { ids, version: S.trip.route?.version } })); } catch (e) { toast(e.message, true); await reload(); } }
 async function arrive(p) {
@@ -488,6 +560,108 @@ function openEditTrip() {
   });
 }
 
+// ───────── 추천 코스: 참고 코스 + 다른 가족이 공개한 코스 ─────────
+// 공개 코스에는 장소·제목·소개만 있다. 사진, 가족 이름, 사람 이름은 서버가 아예 보내지 않는다.
+const COURSE_VIEWS = [['요즘 인기', 'sort=trending'], ['좋아요순', 'sort=popular'], ['새로 올라온', 'sort=new&kind=COMMUNITY'], ['참고 코스', 'kind=REFERENCE']];
+S.courseView = 0;
+const courseKind = c => c.kind === 'REFERENCE' ? '참고 코스' : '가족이 올린 코스';
+const stars = n => '★'.repeat(n) + '☆'.repeat(5 - n);
+async function showCourses() {
+  setTabs(true);
+  const seg = h('div', { class: 'seg', role: 'tablist' }, ...COURSE_VIEWS.map(([l], i) => h('button', { type: 'button', 'aria-pressed': String(S.courseView === i), text: l, onclick: () => { S.courseView = i; showCourses(); } })));
+  const list = h('div', {}, h('p', { class: 'empty', text: '추천 코스를 불러오고 있어요…' }));
+  screen('추천 코스', null, h('h1', { text: '추천 코스' }), h('p', { class: 'sub', text: '다른 가족이 다녀와서 올린 코스와 참고 코스예요. 마음에 들면 이 코스로 우리 가족 여행을 만들어요.' }), seg, list);
+  const { courses } = await api('/api/courses?' + COURSE_VIEWS[S.courseView][1]);
+  list.replaceChildren(...(courses.length ? courses.map(courseCard) : [h('div', { class: 'card' }, empty('compass', S.courseView === 2 ? '아직 다른 가족이 올린 코스가 없어요. 여행을 다녀와서 추억 앨범에서 코스로 공개할 수 있어요.' : '보여 줄 코스가 없어요.'))]));
+}
+function courseCard(c) {
+  const card = h('button', { class: 'card tap', type: 'button' },
+    h('div', { class: 'row' }, h('span', { class: 'chip', text: courseKind(c) }), c.trending ? h('span', { class: 'chip ok', text: '요즘 인기' }) : null, c.ours ? h('span', { class: 'chip gray', text: '우리 가족 코스' }) : null),
+    h('h2', { class: 'mt', text: c.title }),
+    h('p', { class: 'sub', text: [...c.waypoints.map(w => w.name), c.destination.name].join(' → ') }),
+    h('div', { class: 'stat' }, h('span', {}, '좋아요 ', h('b', { text: String(c.likes) })), h('span', {}, '후기 ', h('b', { text: String(c.reviewCount) })), c.rating ? h('span', {}, '별점 ', h('b', { text: String(c.rating) })) : null));
+  card.onclick = () => showCourse(c.id);
+  return card;
+}
+async function showCourse(id) {
+  S.view = 'course'; setTabs(true);
+  const c = await api('/api/courses/' + encodeURIComponent(id));
+  const likeBtn = btn(c.liked ? '좋아요 취소' : '좋아요', async () => { await api('/api/courses/' + encodeURIComponent(c.id) + '/like', { data: { liked: !c.liked } }); toast(c.liked ? '좋아요를 취소했어요.' : '좋아요를 눌렀어요.'); showCourse(c.id); }, c.liked ? 'line' : '', 'heart');
+  screen(c.title, () => go('courses'),
+    h('div', { class: 'row' }, h('span', { class: 'chip', text: courseKind(c) }), c.trending ? h('span', { class: 'chip ok', text: '요즘 인기' }) : null, c.wentWithFamily ? h('span', { class: 'chip ok', text: '우리 가족이 다녀옴' }) : null),
+    c.description ? h('p', { class: 'sub mt', text: c.description }) : null,
+    h('div', { class: 'card' }, h('h3', { text: '코스' }),
+      ...c.waypoints.map((w, i) => h('p', {}, h('b', { text: (i + 1) + '. ' }), w.name, h('span', { class: 'sub', text: ' · ' + (w.address || '') }))),
+      h('p', {}, h('b', { text: '도착 · ' }), c.destination.name, h('span', { class: 'sub', text: ' · ' + (c.destination.address || '') })),
+      c.source ? h('p', { class: 'sub mt' }, '참고: ', h('a', { href: c.source.url, target: '_blank', rel: 'noopener noreferrer', text: c.source.name })) : null),
+    h('div', { class: 'stat' }, h('span', {}, '좋아요 ', h('b', { text: String(c.likes) })), h('span', {}, '이번 주 ', h('b', { text: String(c.likesThisWeek) })), h('span', {}, '후기 ', h('b', { text: String(c.reviewCount) })), c.rating ? h('span', {}, '별점 ', h('b', { text: String(c.rating) })) : null),
+    h('div', { class: 'mt2' }, btn('이 코스로 우리 가족 여행 만들기', () => openCourseTrip(c), '', 'plus')),
+    c.ours ? h('div', { class: 'card' }, h('p', { class: 'sub', text: '우리 가족이 공개한 코스예요. 우리 코스에는 좋아요와 후기를 남길 수 없어요.' }),
+        c.canUnpublish ? h('div', { class: 'mt' }, btn('공개 그만하기', async () => { if (!await confirmSheet('코스 공개를 그만할까요?', '다른 가족이 더 이상 이 코스를 볼 수 없고, 달린 좋아요와 후기도 함께 지워져요. 우리 가족의 여행 기록과 사진은 그대로예요.', '공개 그만하기', true)) return; await api('/api/courses/' + encodeURIComponent(c.id), { method: 'DELETE' }); toast('코스 공개를 그만했어요.'); go('courses'); }, 'line')) : null)
+      : h('div', { class: 'mt' }, likeBtn),
+    h('div', { class: 'section-title' }, h('h2', { text: '후기 ' + c.reviewCount })),
+    c.ours ? null : reviewForm(c),
+    c.reviews.length ? c.reviews.map(r => h('div', { class: 'card' }, h('div', { class: 'row' }, h('b', { text: stars(r.rating) }), h('span', { class: 'sub', text: fmtDay(r.createdAt) + (r.mine ? ' · 내 후기' : '') })), h('p', { class: 'mt', text: r.text })))
+      : h('p', { class: 'sub', text: '아직 후기가 없어요.' }));
+}
+function reviewForm(c) {
+  const mine = c.reviews.find(r => r.mine);
+  let rating = mine?.rating || 5;
+  const starRow = h('div', { class: 'row', role: 'radiogroup', 'aria-label': '별점' });
+  const paint = () => starRow.replaceChildren(...[1, 2, 3, 4, 5].map(n => h('button', { type: 'button', class: 'link', role: 'radio', 'aria-checked': String(n === rating), 'aria-label': n + '점', style: 'font-size:28px;min-width:44px;min-height:44px', text: n <= rating ? '★' : '☆', onclick: () => { rating = n; paint(); } })));
+  paint();
+  const text = h('textarea', { id: 'reviewText', maxlength: 300, rows: 3, placeholder: '다녀온 느낌, 아이들 반응, 주차 팁 등' });
+  if (mine) text.value = mine.text;
+  return h('div', { class: 'card' }, h('h3', { text: mine ? '내 후기 고치기' : '후기 남기기' }), starRow, h('label', { for: 'reviewText', text: '후기' }), text,
+    h('p', { class: 'sub', text: '후기에는 내 이름이 보이지 않아요.' }),
+    h('div', { class: 'mt' }, btn(mine ? '후기 고치기' : '후기 올리기', async () => { if (!text.value.trim()) { text.focus(); throw Error('후기 내용을 적어 주세요.'); } await api('/api/courses/' + encodeURIComponent(c.id) + '/reviews', { data: { rating, text: text.value } }); toast('후기를 올렸어요.'); showCourse(c.id); })),
+    mine ? h('div', { class: 'mt' }, btn('내 후기 지우기', async () => { await api('/api/courses/' + encodeURIComponent(c.id) + '/reviews', { method: 'DELETE' }); toast('후기를 지웠어요.'); showCourse(c.id); }, 'line')) : null);
+}
+function openCourseTrip(c) {
+  openSheet('이 코스로 여행 만들기', body => {
+    const date = h('input', { type: 'date', id: 'courseDate' });
+    const driver = memberSelect('courseDriver', S.me.user.id);
+    const boxes = c.waypoints.map(w => { const b = h('input', { type: 'checkbox', checked: true }); return { w, b }; });
+    body.append(h('p', { class: 'sub', text: '‘' + c.title + '’에서 들를 경유지를 선택해 주세요. 만든 뒤에도 경유지를 더 추가하거나 뺄 수 있어요.' }),
+      boxes.length ? h('label', { text: '포함할 경유지 선택' }) : null,
+      ...boxes.map(({ w, b }) => h('label', { class: 'check' }, b, h('span', { text: w.name + (w.address ? ' · ' + w.address : '') }))),
+      h('p', { class: 'sub mt', text: '도착지 · ' + c.destination.name }),
+      h('label', { for: 'courseDate', text: '날짜' }), date, h('label', { for: 'courseDriver', text: '운전자' }), driver,
+      h('p', { class: 'sub mt', text: '추천 코스로 다녀온 여행은 다시 코스로 공개하지 않아요. 다녀온 뒤 이 코스에 좋아요와 후기를 남길 수 있어요.' }),
+      h('div', { class: 'mt2' }, btn('여행 만들기', async () => {
+        const trip = await api('/api/trips', { data: { courseId: c.id, waypoints: boxes.filter(x => x.b.checked).map(x => x.w), date: date.value || null, driverUserId: driver.value || null } });
+        closeSheet(); toast('코스로 여행을 만들었어요.'); S.tab = 'trips'; showTrip(trip.id);
+      })));
+  });
+}
+/** 추억 화면 위쪽: 코스로 공개하기 / 이미 공개함 / 추천 코스로 다녀온 여행이면 좋아요·후기로 안내 */
+function courseShareCard(t) {
+  if (t.course) return h('div', { class: 'card' }, h('h3', { text: '추천 코스 ‘' + t.course.title + '’로 다녀온 여행' }),
+    h('p', { class: 'sub', text: '추천받은 코스는 다시 공개하지 않아요. 대신 그 코스에 좋아요와 후기를 남길 수 있어요. 이 여행 기록과 사진은 우리 가족 앨범에 그대로 남아요.' }),
+    t.course.exists ? h('div', { class: 'mt' }, btn('코스에 좋아요·후기 남기기', () => showCourse(t.course.id), '', 'heart')) : h('p', { class: 'sub', text: '그 코스는 지금 공개되어 있지 않아요.' }));
+  if (t.publishedCourseId) return h('div', { class: 'card' }, h('h3', { text: '다른 가족에게 코스로 공개했어요' }), h('p', { class: 'sub', text: '장소와 코스 이름·소개만 공개돼요. 사진과 가족 이름은 공개되지 않아요.' }),
+    h('div', { class: 'mt' }, btn('공개한 코스 보기', () => showCourse(t.publishedCourseId), 'line')));
+  if (!t.canManage) return h('p', { class: 'sub mt', text: '여행을 만든 사람, 운전자, 가족 관리자가 이 여행을 코스로 공개할 수 있어요.' });
+  return h('div', { class: 'card' }, h('h3', { text: '이 여행, 다른 가족에게 추천할까요?' }), h('p', { class: 'sub', text: '고른 장소만 코스로 공개돼요. 사진과 가족 이름은 공개되지 않아요.' }),
+    h('div', { class: 'mt' }, btn('코스로 공개하기', () => openPublish(t), '', 'share')));
+}
+function openPublish(t) {
+  openSheet('코스로 공개하기', body => {
+    const title = h('input', { type: 'text', id: 'pubTitle', maxlength: 40, value: t.title });
+    const desc = h('textarea', { id: 'pubDesc', maxlength: 300, rows: 3, placeholder: '예: 아이들과 걷기 좋은 바닷가 코스예요' });
+    const boxes = t.stops.map(p => { const b = h('input', { type: 'checkbox', checked: p.status === 'VISITED' }); return { p, b }; });
+    body.append(h('label', { for: 'pubTitle', text: '코스 이름' }), title, h('label', { for: 'pubDesc', text: '소개 (선택)' }), desc,
+      h('label', { text: '공개할 장소' }),
+      ...boxes.map(({ p, b }) => h('label', { class: 'check' }, b, h('span', { text: p.place.name + (p.status === 'VISITED' ? '' : ' (들르지 못함)') }))),
+      h('p', { class: 'sub', text: '도착지 ' + (t.destination?.name || '') + '는 항상 포함돼요.' }),
+      h('div', { class: 'note' }, h('b', { text: '공개되는 것 · ' }), '코스 이름, 소개, 고른 장소', h('br'), h('b', { text: '공개되지 않는 것 · ' }), '사진, 가족·사람 이름, 제안 이유와 가족에게 남긴 말'),
+      h('div', { class: 'mt2' }, btn('코스 공개하기', async () => {
+        const c = await api('/api/courses', { data: { tripId: t.id, title: title.value, description: desc.value, placeIds: boxes.filter(x => x.b.checked).map(x => x.p.id) } });
+        closeSheet(); toast('코스로 공개했어요. 다른 가족이 볼 수 있어요.'); showCourse(c.id);
+      })));
+  });
+}
+
 // ───────── ⑥ 추억 앨범 ─────────
 async function showAlbum() {
   setTabs(true);
@@ -503,11 +677,12 @@ async function showAlbum() {
 }
 function memoryView(t) {
   const visited = t.stops.filter(p => p.status === 'VISITED'), missed = t.stops.filter(p => p.status !== 'VISITED');
-  const stopCard = p => h('div', { class: 'card' }, h('div', { class: 'row' }, h('span', { class: 'chip ' + (p.status === 'VISITED' ? 'ok' : 'gray'), text: p.status === 'VISITED' ? '다녀옴' : '들르지 못함' }), p.visitedAt ? h('span', { class: 'sub', text: new Date(p.visitedAt).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) }) : null),
-    h('h3', { class: 'mt', text: p.place.name }), h('p', { class: 'sub', text: p.by.name + '님이 제안했어요' }),
+  const stopCard = p => h('div', { class: 'card' }, h('div', { class: 'row wrapx' }, h('span', { class: 'chip ' + (p.status === 'VISITED' ? 'ok' : 'gray'), text: p.status === 'VISITED' ? '다녀옴' : '들르지 못함' }), p.visitedAt ? h('span', { class: 'sub', text: new Date(p.visitedAt).toLocaleTimeString('ko-KR', { hour: 'numeric', minute: '2-digit' }) }) : null),
+    h('h3', { class: 'mt', text: p.place.name }), h('p', { class: 'sub', text: p.by.name + '님의 이야기' }),
     p.reason ? h('div', { class: 'quote' }, h('b', { text: '가고 싶었던 이유 · ' }), p.reason) : null, p.message ? h('div', { class: 'quote' }, h('b', { text: '가족에게 · ' }), p.message) : null,
     photoGrid(t.photos.filter(ph => ph.proposalId === p.id), p.id));
   return h('div', {}, h('p', { class: 'sub mt', text: (t.finishedAt ? fmtDay(t.finishedAt) + '에 마친 여행' : '') }),
+    courseShareCard(t),
     visited.map(stopCard), missed.length ? [h('div', { class: 'section-title' }, h('h2', { text: '이번엔 들르지 못한 곳' })), missed.map(stopCard)] : null,
     h('div', { class: 'card' }, h('h2', { text: '도착지 · ' + (t.destination?.name || '') }), h('p', { class: 'sub', text: '여행 전체 사진' }), photoGrid(t.photos.filter(ph => !ph.proposalId))));
 }

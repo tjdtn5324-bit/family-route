@@ -11,5 +11,7 @@ if ($listener) {
 }
 foreach ($item in $supervisors) { Stop-Process -Id $item.ProcessId -ErrorAction SilentlyContinue }
 if ($listener) { Stop-Process -Id $server.ProcessId -ErrorAction Stop }
-Start-Process -WindowStyle Hidden -FilePath "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -WorkingDirectory $project -ArgumentList @('-NoProfile','-WindowStyle','Hidden','-ExecutionPolicy','Bypass','-File',('"'+$launcher+'"'),'-NodePath',('"'+$node+'"'),'-TunnelPath',('"'+$tunnel+'"'))
+$cmd = "`"$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe`" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$launcher`" -NodePath `"$node`" -TunnelPath `"$tunnel`""
+$startup = New-CimInstance -ClassName Win32_ProcessStartup -ClientOnly -Property @{ ShowWindow = [uint16]0 }
+$null = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{ CommandLine = $cmd; CurrentDirectory = $project; ProcessStartupInformation = $startup }
 Write-Output 'Restart requested. The existing encrypted family data will be restored.'

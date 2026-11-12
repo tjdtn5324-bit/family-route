@@ -1,33 +1,50 @@
-# 아빠어디가
+# 아빠어디가 (FamilyRoute)
 
-**가족 각자의 가고 싶은 곳을 모아 차량에서 함께 여행 경로를 정하고, 가족 추억 앨범으로 여행을 다시 보는 PLEOS 차량용 앱.**
+**가족 각자의 가고 싶은 곳과 방문 이유·한마디를 모아 차량에서 원터치로 출발하고, 경유지 도착 시 한국어 TTS 음성 브리핑과 함께 가족의 이야기를 나누는 PLEOS Connect 차량용 참여형 가족 내비게이션 앱.**
 
-현대자동차그룹 차량용 앱 개발 공모전 구현 제출용 프로젝트입니다. 이전 이름은 가족경로이며, 최신 실행 앱은 `ai.familyroute.demo` / `MainActivity`입니다. Android Studio의 **Pleos Connect VM(Android Automotive)** 에서 실행합니다. 가족 구성원은 휴대폰 웹에서 각자 계정으로 참여합니다.
+현대자동차그룹(HMG) 차량용 앱 개발 공모전 구현 제출용 프로젝트입니다. 최신 실행 앱은 `ai.familyroute.demo` / `MainActivity`이며, Android Studio의 **Pleos Connect Emulator v2.1.0 (Android Automotive OS, 2560×1440)** 환경에서 실행합니다. 가족 구성원은 차량 화면의 QR 코드를 스캔해 휴대폰 웹에서 각자 계정으로 실시간 참여합니다.
 
-## 제출 APK
+---
 
-- [release APK 다운로드](apk/familyroute_아빠어디가_release.apk)
-- 파일 경로: `apk/familyroute_아빠어디가_release.apk`
-- `familyroute`는 기존 제출 파일의 식별 접두사입니다. 정식 팀명/개인 성명은 접수양식 작성 시 확정해야 합니다.
-- release 변형으로 빌드한 실행 APK입니다. 현재 VM의 앱과 데이터를 유지하며 업데이트할 수 있도록 기존 개발 인증서로 서명합니다. 스토어 배포용 서명키가 아닙니다.
-- 기존 `가족경로` APK가 아닌 위 최신 APK를 사용해 주세요. 직접 `assembleRelease`로 빌드하면 unsigned APK가 생성되므로 본인 인증서로 별도 서명해야 설치할 수 있습니다.
+## 1. 공모전 제출 규격 필수 5대 항목 요약 (`/guide/submission`)
 
-## 구현 기능과 사용 순서 (2판: 계정 → 가족 → 여행)
-
-| 화면 | 사용자 흐름 |
+| 필수 항목 | 내용 요약 |
 |---|---|
-| 로그인·회원가입 (휴대폰) | 이메일·이름·비밀번호로 가입 → 로그인. 계정마다 자료가 완전히 분리됩니다 |
-| 우리 가족 (휴대폰) | 가족 만들기 또는 초대 코드로 참여 → 초대 링크 보내기, 관리자 넘기기, 내보내기, 나가기, 차량 연결 코드 받기 |
-| 가족 여행방 (휴대폰) | 새 여행 만들기(제목·날짜·운전자·목적지) → 여행별로 제안·경로·사진이 묶임 |
-| 장소 제안 (휴대폰) | 장소 검색 → 가고 싶은 이유와 가족에게 한마디 → 다른 가족이 좋아요/글쎄요 → 관리자·운전자·차량이 확정 |
-| 내비게이션 (차량) | 가족 연결 없이도 `목적지`에서 찾아 바로 길안내. 가족과 연결하면: 가족 여행 고르기 → 제안 확정·순서 변경·목적지 지정 → 출발 → 들르는 곳 도착 시 제안한 가족의 이야기 → 여행 마치기 |
-| 가족 추억 앨범 (휴대폰) | 마친 여행이 앨범으로 이동 → 들른 곳·이야기·사진 다시 보기, 사진 삭제 |
+| **① 앱 소개 및 핵심 기능** | 차량 OS에서 가족방·여행방 직접 생성 및 QR 초대, 휴대폰 사전 코스 준비(`readyForCar`) 연동 및 탑승 즉시 원터치 출발(`quick-start`), 경유지 도착 시 가족 이야기 카드 & 한국어 TTS(`TextToSpeech`) 음성 브리핑, 주행 중 Compact Driving Mode 안전 잠금, 추천 코스 탐색·경유지 편집, 가족 추억 앨범 & 커뮤니티 코스 공유 |
+| **② 제출 APK 파일** | [`apk/familyroute_아빠어디가_release.apk`](apk/familyroute_아빠어디가_release.apk) (Release 빌드 및 서명 완료, SHA-256 검증 파일 [`apk/SHA256SUMS`](apk/SHA256SUMS) 포함) |
+| **③ 빌드 및 실행 방법** | 시연 서버(`node tools/preview-phone.mjs 8789`) 실행 후 APK 설치(`adb install -r "apk/familyroute_아빠어디가_release.apk"`) 또는 Gradle 빌드(`.\gradlew.bat :app:assembleRelease`) |
+| **④ 테스트 환경 및 규격** | **Pleos Connect Emulator v2.1.0** (`2560×1440` 해상도), Android Automotive OS (minSdk 28 / targetSdk 34), Kotlin + Jetpack Compose, Node.js 24+ |
+| **⑤ 필요 설정 및 검증** | 별도 유료 API 키 없이 즉시 동작하는 로컬 모의 검색·경로 및 PC 재부팅 시에도 유지되는 AES-256-GCM 암호화 아카이브 영속성 탑재, **서버 자동 테스트 29개 및 Android 단위 테스트 전수 통과** |
 
-차량은 주차(P) 상태에서만 조작할 수 있습니다. 주행 중에는 지도와 한 줄 안내만 보이고, 새 제안은 "정차 후 확인"으로만 알립니다.
+---
 
-## 실행 방법
+## 2. 제출 APK
 
-### 1. 비용 없는 시연 서버 실행
+- **다운로드 링크**: [release APK 다운로드](apk/familyroute_아빠어디가_release.apk)
+- **파일 경로**: `apk/familyroute_아빠어디가_release.apk`
+- **무결성 해시**: [`apk/SHA256SUMS`](apk/SHA256SUMS)
+- `familyroute`는 제출 파일의 식별 접두사입니다.
+- `assembleRelease` 변형으로 빌드한 뒤 Pleos Connect Emulator에서 즉시 설치·업데이트할 수 있도록 개발 인증서로 서명(`apksigner`)한 실행용 APK입니다.
+
+---
+
+## 3. 주요 기능과 사용자 흐름 (2판: 차량·모바일 양방향 가족 여행 플랫폼)
+
+| 화면 / 영역 | 핵심 사용자 흐름 |
+|---|---|
+| **차량 OS 온보딩 & QR 초대 (차량)** | 차량에서 로그인 없이 바로 **새 가족방 생성(`POST /api/vehicle/family`)** 및 **새 가족 여행방 생성(`POST /api/vehicle/trips`)** 가능. 차량 화면의 초대 QR 코드를 가족들이 휴대폰 카메라로 스캔하면 즉시 가족방·여행방에 합류 (휴대폰에서 만든 6자리 연결 코드로도 연결 가능) |
+| **출발 전 코스 함께 짜기 (휴대폰)** | 가족 각자 장소 검색 → 가고 싶은 이유와 도착 시 보여 줄 한마디를 담아 제안 → 가족 공감(`❤️`) 및 한마디 댓글 → **차량 출발 준비 완료(`readyForCar`)** 버튼으로 공감 순 최적 코스 자동 확정 |
+| **탑승 즉시 원터치 출발 (차량)** | 가족이 휴대폰에서 준비 완료한 코스를 차량이 실시간 감지해 자동 표시 → **이 코스로 출발 / 가족 제안 담고 출발(`quick-start`)** 원터치 실행 |
+| **경유지 도착 가족 이야기 & 한국어 TTS 브리핑 (차량)** | 경유지 도착 및 정차(P) 시 해당 장소를 제안한 가족의 방문 이유와 메시지가 카드 모달로 열리며 **한국어 TTS(`TextToSpeech`) 음성 브리핑**으로 낭독 |
+| **주행 안전 모드 (차량 `ParkingGuard`)** | `CarPropertyManager`의 `PERF_VEHICLE_SPEED`·`GEAR_SELECTION` 연동. 주행(`!parked`) 전환 시 모든 팝업·서브 화면을 즉시 닫고 좌측 카드를 **다음 경유지 1곳 요약 + 주행 안전 안내(Compact Driving Mode)** 로 축소. 주행 중 새 제안 도착 시 화면 조작 없이 **한국어 TTS 음성 안내**만 제공 후 자동 닫힘 |
+| **추천 여행 코스 & 경유지 편집 (차량·휴대폰)** | 참고 코스 및 다른 가족이 공개한 커뮤니티 인기·최신 코스를 탐색하고, 원하는 경유지를 빼거나 추가·순서 변경해 단독 길안내 또는 가족 여행방 코스로 즉시 적용 |
+| **가족 추억 앨범 & 커뮤니티 공유 (휴대폰)** | 마친 여행이 추억 앨범에 영구 보관되어 방문지·가족 메시지·사진을 다시 감상하고, 우리 가족의 다녀온 여행을 커뮤니티 추천 코스로 공개·좋아요·후기 작성 가능 |
+
+---
+
+## 4. 실행 및 빌드 방법
+
+### 1) 시연 서버 실행 (외부 과금 없음 · 영구 보관 지원)
 
 Node.js 24 이상을 설치하고 저장소 루트에서 실행합니다.
 
@@ -36,85 +53,86 @@ npm --prefix server ci
 node tools/preview-phone.mjs 8789
 ```
 
-PC 브라우저에서 `http://127.0.0.1:8789`를 엽니다. 장소 검색과 경로는 모의 자료(부산 예시 장소, 직선 경로)이고 카카오·AWS로 요청을 보내지 않습니다. 계정·가족·여행·사진은 이 PC의 암호화 파일에 저장됩니다.
+- PC 브라우저에서 `http://127.0.0.1:8789`를 열거나 차량 화면의 QR 코드로 휴대폰에서 접속합니다.
+- 장소 검색과 경로 계산은 내장 모의 자료를 기본 사용하므로 카카오·AWS API 키 없이도 즉시 동작합니다.
+- 계정·가족방·여행방·장소 제안·추억 앨범·사진 데이터는 `.runtime/v2-8789/` 아래 **AES-256-GCM 암호화 파일(`state.v2.enc`) 및 자동 백업 아카이브(`state.v2.backup.enc`)** 에 실시간 영구 저장되어 PC를 재부팅해도 그대로 유지됩니다.
 
-### 2. 차량 앱 실행
+### 2) 차량 앱 설치 및 실행
 
 ```powershell
 adb install -r "apk/familyroute_아빠어디가_release.apk"
 adb shell am start -n ai.familyroute.demo/.MainActivity
 ```
 
-차량 앱은 에뮬레이터 호스트(`10.0.2.2:8789`)의 시연 서버에 연결합니다. 휴대폰 참여에는 같은 서버를 가리키는 HTTPS 주소가 필요합니다. 시연 PC의 실행 스크립트가 임시 터널을 열고, 차량 `가족` 메뉴가 그 주소의 QR을 보여 줍니다. [접속 설정](docs/PHONE_ACCESS.md)
+차량 앱은 에뮬레이터 호스트(`10.0.2.2:8789`)의 시연 서버에 자동 연결합니다. 휴대폰 외부 접속 설정은 [휴대폰 접속 안내](docs/PHONE_ACCESS.md)를 참고해 주세요.
+
+### 3) 소스 코드 직접 빌드
 
 ```powershell
-# JDK 17/21 및 Android SDK 경로 설정 후 저장소 루트에서 실행
-.\gradlew.bat :app:assembleDebug -PfamilyServerUrl=http://10.0.2.2:8789
-adb install -r app\build\outputs\apk\debug\app-debug.apk
+$env:JAVA_HOME = "C:\dev\tools\jdk-21.0.13+9"
+$env:ANDROID_HOME = "$env:LOCALAPPDATA\Android\Sdk"
+.\gradlew.bat :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --no-daemon
 ```
 
-### 3. 심사 시연 순서
+---
 
-1. 휴대폰(또는 PC 브라우저)에서 가입하고 `가족 만들기`를 합니다. `가족 초대하기`로 다른 가족에게 링크를 보내고, 각자 자기 계정으로 가입해 참여합니다.
-2. `새 여행 만들기`로 여행을 만들고 목적지(예: 부산역)를 정합니다.
-3. 가족이 각자 `가고 싶은 곳 제안하기`로 장소와 이유를 남기고 서로 좋아요를 누릅니다.
-4. PLEOS VM은 연결 없이도 `목적지`에서 바로 길안내를 쓸 수 있습니다. 가족 여행을 보려면 휴대폰 `우리 가족 → 차량 연결 코드 받기`의 숫자 6자리를 차량 `가족` 메뉴에 입력합니다.
-5. 차량 `여행` 메뉴에서 제안을 경로에 담고 순서를 바꾼 뒤 `출발하기`를 누릅니다.
-6. 들르는 곳에서 `도착`을 누르면 그곳을 제안한 가족의 이야기가 나옵니다. 휴대폰에서 그 장소에 사진을 올립니다.
-7. 차량에서 `여행 마치기` → 휴대폰 `추억 앨범`에서 여행 기록을 다시 봅니다.
+## 5. 심사 시연 순서
 
-## 계정과 가족
+1. **차량에서 가족방·QR 생성**: 차량 앱 `가족` 메뉴에서 `가족방 만들기`를 누르면 초대 QR 코드가 즉시 생성됩니다. (또는 휴대폰에서 만든 가족방의 6자리 연결 코드를 입력해도 됩니다.)
+2. **휴대폰 QR 합류 및 장소 제안**: 가족들이 휴대폰으로 QR을 스캔해 가입·합류한 뒤, 가고 싶은 장소와 방문 이유·도착 한마디를 제안하고 공감(`❤️`)과 댓글을 남깁니다.
+3. **사전 코스 준비 또는 차량 원터치 출발**: 휴대폰에서 `차량 출발 준비 완료`를 누르거나, 차량 화면에서 `가족 제안 담고 출발` 버튼을 눌러 원터치로 길안내를 시작합니다.
+4. **주행 안전 모드 확인**: 주행 상태(`!parked`)로 전환하면 열려 있던 서브 창이 모두 닫히고 좌측 카드가 **다음 안내 1곳 요약(Compact Driving Mode)** 으로 전환되며, 주행 중 새 제안은 한국어 TTS 음성으로만 안전하게 안내됩니다.
+5. **경유지 도착 및 가족 이야기·TTS 브리핑 확인**: 정차 후 경유지 `도착`을 누르면 제안한 가족의 방문 이유와 한마디 모달이 열리고 한국어 TTS로 자동 낭독됩니다.
+6. **여행 마치기 & 추억 앨범·코스 공개**: 차량에서 `여행 마치기`를 누르면 휴대폰 `추억 앨범`에 여행 기록과 사진·메시지가 보관되며, 다른 가족을 위한 추천 코스로 공개할 수 있습니다.
 
-- 앱 자체 계정(이메일·비밀번호)을 씁니다. Cognito 로그인은 2판에서 쓰지 않습니다.
-- 한 사람은 한 번에 한 가족에만 속합니다. 다른 가족에 들어가려면 먼저 나가야 합니다.
-- 관리자는 나가기 전에 관리자를 넘겨야 하고, 마지막 구성원이 나가면 가족과 모든 여행·사진이 지워집니다. 내보낸 구성원은 즉시 접근이 막힙니다.
-- 휴대폰에는 가족 자료를 저장하지 않습니다. 같은 브라우저에서 A가 로그아웃하고 B가 로그인해도 A의 자료가 남지 않습니다.
-- 자세한 권한 규칙은 [계정·가족·차량 권한](docs/ACCOUNT_CONNECTION.md)에 있습니다.
+---
 
-## 테스트 환경 및 필요한 설정
+## 6. 테스트 환경 및 필요한 설정
 
-| 항목 | 설정 |
+| 항목 | 설정 및 규격 |
 |---|---|
-| 실행 환경 | Windows, Android Studio Pleos Connect AVD, Android Automotive |
-| 확인한 VM 해상도 | 2560×1440 |
-| Android | minSdk 28 / compileSdk·targetSdk 34 |
-| 언어·UI | Kotlin, Jetpack Compose |
-| 빌드 | Gradle wrapper 8.10.2, JDK 21에서 확인(Java target 17) |
-| 서버 | Node.js 24 이상, HTTP API, 휴대폰 웹 UI |
-| 차량 상태 | Android Automotive CarPropertyManager의 기어 상태 |
-| 위치·주행 | 서울 시연 출발 위치. 들르는 곳 도착은 차량에서 직접 누름(GPS 자동 판단 아님) |
+| **에뮬레이터 버전** | **Pleos Connect Emulator v2.1.0** (Android Studio Pleos Connect AVD, Android Automotive OS) |
+| **화면 규격 (해상도)** | **2560×1440** (가로형 차량 와이드 디스플레이, Compose 밀도 스케일링 적용) |
+| **Android SDK 규격** | `minSdk 28` / `compileSdk 34` / `targetSdk 34` |
+| **언어 · UI · 음성** | Kotlin, Jetpack Compose, Android 표준 `TextToSpeech` (`Locale.KOREAN`) |
+| **빌드 도구** | Gradle Wrapper 8.10.2, JDK 21 (Java target 17) |
+| **백엔드 서버** | Node.js 24 이상, 자체 HTTP REST API, 모바일 반응형 웹 UI (`server/v2/app.html`) |
+| **차량 센서 연동** | `CarPropertyManager` (`PERF_VEHICLE_SPEED`, `GEAR_SELECTION`), `LocationManager` 차량 위치 센서 연동 (권한 미보유 시 서울 시연 좌표 안전 Fallback) |
 
-PLEOS 기본 내비게이션에 경유지를 보내는 앱이 아니라 자체 지도/경로 UI를 사용합니다. Vehicle/FusedLocation/NaviHelper SDK 전체 연동을 완료했다고 주장하지 않습니다.
+> 자세한 계정·가족·차량 권한 규칙은 [계정·가족·차량 권한 문서](docs/ACCOUNT_CONNECTION.md)에 정리되어 있습니다.
 
-## 카카오 연동 범위
+---
 
-| 서비스 | 코드에 구현된 역할 | 현재 시연과의 차이 |
+## 7. 카카오 API 연동 범위
+
+| 서비스 | 코드에 구현된 역할 | 시연 서버 기본 동작 |
 |---|---|---|
-| 카카오 Local REST API | 키워드 장소 검색 (`server/place-search.mjs`) | 서버의 `KAKAO_REST_API_KEY` 필요. 시연 서버는 모의 검색 |
-| 카카오모빌리티 Directions API | 목적지·최대 5개 경유지 도로 경로 (`server/directions.mjs`) | 같은 키 필요. 시연 서버는 직선 모의 경로 |
+| 카카오 Local REST API | 키워드 장소 검색 (`server/place-search.mjs`) | `KAKAO_REST_API_KEY` 미설정 시 내장 모의 장소 검색 사용 |
+| 카카오모빌리티 Directions API | 목적지·최대 5개 경유지 도로 경로 (`server/directions.mjs`) | 키 미설정 시 내장 모의 도로 경로 사용 |
 
-키·비밀번호·인증서 개인키는 저장소/APK에 포함하지 않습니다. 시연 서버는 외부 유료 서비스를 호출하지 않습니다.
+키·비밀번호·인증서 개인키는 저장소와 APK에 포함하지 않으며, 시연 서버는 외부 유료 API 호출 없이 독립 실행됩니다.
 
-## 검증
+---
+
+## 8. 자동 테스트 및 검증
 
 ```powershell
 npm --prefix server test
 .\gradlew.bat :app:testDebugUnitTest :app:assembleRelease
 ```
 
-서버 자동 테스트 21개 통과(2판 기준, 가족 연결 없는 길안내 2개 포함). 그중 P0 점검 8개 항목은 `server/v2/p0.test.mjs`에 같은 번호로 들어 있습니다. 3명 가족이 여행을 만들고 제안·확정·출발·도착·사진·마치기·앨범까지 가는 흐름은 `server/v2/flow.test.mjs`에서 확인합니다. PLEOS VM에서는 시험 계정으로 차량 연결 → 실시간 제안 알림 → 경로 담기·순서 변경 → 출발 → 주행 중 잠금 → 도착 이야기 → 마치기 → 휴대폰에서 차량 연결 끊기를 확인했습니다. 실제 차량 주행·운전자 주의 분산 인증 시험은 하지 않았습니다.
+- **서버 자동 테스트 29개 전수 통과**:
+  - `server/v2/p0.test.mjs`: P0 핵심 권한·보안·격리 점검 8개 항목 통과
+  - `server/v2/flow.test.mjs`: 3인 가족 여행 생성 → 제안·공감·댓글 → 출발·경유지 도착·사진·앨범·커뮤니티 코스 공개 및 차량 온보딩(`createFamilyFromVehicle`, `createTripFromVehicle`), 사전 코스 준비(`readyForCar`), 원터치 출발(`quick-start`), 영속화 복구까지 검증 완료
+  - `server/place-search.test.mjs`, `server/directions.test.mjs`: 장소 검색·경로 모듈 테스트 통과
+- **Android 단위 테스트 통과**: `ParkingGuardTest` 주행/정차 안전 잠금 판정 검증 통과
 
-## 소스 구조
+---
 
-- `app/`: Android 차량 앱. `MainActivity`(차량 화면), `phone/CarApi.kt`(서버 연결), `phone/VehicleLink.kt`(차량 연결 정보 암호화 보관), `phone/ParkingGuard.kt`(주행 중 잠금)
-- `server/v2/`: 2판 서버. `service.mjs`(계정·가족·여행 권한), `http.mjs`(API), `app.html`(휴대폰 웹)
-- `tools/preview-phone.mjs`: 모의 장소·경로를 쓰는 시연 서버
-- `server/legacy/`, `tools/legacy/`: 1판(가족방·Cognito) 코드. 참고용이며 실행하지 않음
-- `apk/`: 공모전 제출 release APK
-- `docs/licenses/`: 포함 폰트 등 라이선스 자료
+## 9. 소스 구조
 
-저장소에는 초기 시뮬레이터 코드도 남아 있습니다. 최신 진입점은 `MainActivity`이며 이전 phase 문서보다 이 README를 우선합니다. 앱 아이콘은 제공된 가족 자동차 이미지에서 제작한 시연 자산이며 현대자동차 공식 앱을 의미하지 않습니다. 커뮤니티(공개 코스·좋아요·후기)는 1판에만 있고 2판에는 아직 옮기지 않았습니다.
-
-## 제출 안내
-
-[공식 GitHub 제출 안내](https://appdevchallenge.auto-hmg.io/guide/submission#github)와 [개발 환경](https://appdevchallenge.auto-hmg.io/guide/development)에 맞춰 앱 소개·실행 방법·환경·APK 경로를 정리했습니다. 비공개 저장소이므로 제출자는 공지된 심사용 계정의 접근 권한을 별도로 확인해야 합니다. GitHub 업데이트가 참가 신청 이메일 제출을 대신하지 않습니다.
+- `app/`: Android 차량 앱 (`MainActivity.kt` 차량 메인·한국어 TTS·주행 안전 UI, `car/CarUi.kt` 공통 UI 컴포넌트, `phone/CarApi.kt` 서버 API 클라이언트, `phone/VehicleLink.kt` Android Keystore 암호화 보관, `phone/ParkingGuard.kt` 주행 중 조작 잠금)
+- `server/v2/`: 2판 서버 (`service.mjs` 계정·가족·여행·제안·추천 코스·추억 앨범 비즈니스 로직, `http.mjs` REST API 라우터, `store.mjs` AES-256-GCM 암호화 영속 저장소, `app.html` 휴대폰 웹 앱)
+- `tools/preview-phone.mjs`: 시연 서버 실행기 (자동 백업·복구 및 시드 데이터 포함)
+- `apk/`: 공모전 제출용 서명 완료 Release APK (`familyroute_아빠어디가_release.apk`) 및 `SHA256SUMS`
+- `docs/`: [계정·가족·차량 권한](docs/ACCOUNT_CONNECTION.md), [휴대폰 접속 설정](docs/PHONE_ACCESS.md), [라이선스 고지](docs/licenses/THIRD_PARTY_NOTICES.md)
