@@ -1,13 +1,13 @@
 // 시연 서버(2판: 계정 → 가족 그룹 → 여행).
-// 장소 검색과 도로 경로는 모의 자료다. 계정·가족·여행·사진은 이 PC의 암호화 파일에 보관한다.
+// 카카오 키가 있으면 실제 검색·경로를 요청하고, 미설정 시 시연 자료를 사용한다. 계정·가족·여행·사진은 이 PC의 암호화 파일에 보관한다.
 // 실행: node tools/preview-phone.mjs 8789  →  http://127.0.0.1:8789 (에뮬레이터는 10.0.2.2:8789)
 import { createServer } from '../server/v2/http.mjs';
 import { Service } from '../server/v2/service.mjs';
 import { REFERENCE_COURSES } from '../server/v2/reference-courses.mjs';
 import { openLocalArchive } from '../server/local-persistence.mjs';
-import { searchPlaces } from '../server/place-search.mjs';
+import { createPlaceSearch, loadPlaceSearchKey } from '../server/place-search-provider.mjs';
 import { getDirections } from '../server/directions.mjs';
-import { homedir } from 'node:os';
+import { homedir, networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomUUID } from 'node:crypto';
@@ -61,7 +61,7 @@ const directory = process.env.FAMILY_V2_ARCHIVE_DIR || (port > 0 ? join(projectR
 const archive = openLocalArchive(directory);
 const saved = archive.load();
 const service = saved ? Service.fromSnapshot(saved) : new Service();
-const kakaoKey = (process.env.KAKAO_REST_API_KEY || '').trim();
+const kakaoKey = loadPlaceSearchKey({ path: join(projectRoot, 'place-search.local.json') });
 // 도로 경로: 카카오 키가 있으면 실제 도로 경로를 우선 시도하고, 없거나 실패하면 출발지 → 들르는 곳 → 목적지를 잇는 시연 경로로 안내한다.
 const mockDirections = async c => {
   const pts = [c.origin, ...c.waypoints, c.destination].map(p => [p.latitude, p.longitude]);
@@ -80,10 +80,7 @@ const localSearch = q => {
 const instance = randomUUID();
 const api = createServer({
   service, apiKey: kakaoKey || 'preview', persist: archive.save, directions,
-  search: async q => {
-    if (kakaoKey) { try { const res = await searchPlaces(q, { apiKey: kakaoKey }); if (res.length) return res; } catch {} }
-    return localSearch(q);
-  },
+  search: createPlaceSearch({ apiKey: kakaoKey, localSearch }),
   assets: { '/assets/appa-eodiga.png': [new URL('../server/assets/appa-eodiga.png', import.meta.url), 'image/png'] }
 });
 const handler = api.listeners('request')[0];
@@ -102,7 +99,7 @@ api.on('request', async (req, res) => {
     const origin = 'https://' + hostname;
     if ((await read(origin + '/api/preview-instance')).instance !== instance) throw Error();
     res.end(JSON.stringify({ origin }));
-  } catch { res.end(JSON.stringify({ origin: '' })); }
+  } catch { res.end(JSON.stringify({ origin: lanOrigin() })); }
 });
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(sig, () => {
@@ -110,4 +107,13 @@ for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
     process.exit(0);
   });
 }
-api.listen(port, '127.0.0.1', () => console.log('preview: http://127.0.0.1:' + api.address().port));
+// FAMILY_LAN=1: 터널(cloudflared)이 없는 곳에서 같은 Wi-Fi의 휴대폰이 바로 들어오도록 이 PC의 사설 주소로도 연다.
+const lan = process.env.FAMILY_LAN === '1';
+function lanOrigin() {
+  if (!lan) return '';
+  const ips = Object.values(networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address)
+    .filter(a => /^(192\.168\.|10\.|172\.(1[6-9]|2\d|3[01])\.)/.test(a));
+  const ip = ips.find(a => a.startsWith('192.168.')) || ips[0];
+  return ip ? 'http://' + ip + ':' + api.address().port : '';
+}
+api.listen(port, lan ? '0.0.0.0' : '127.0.0.1', () => console.log('preview: http://127.0.0.1:' + api.address().port + (lanOrigin() ? '  phone: ' + lanOrigin() : '')));

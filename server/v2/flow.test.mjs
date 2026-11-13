@@ -58,7 +58,7 @@ test('여행 만들기 → 가족 제안 → 운전자 확정 → 출발 → 정
 
 test('경로를 못 찾으면 들르는 곳과 경로를 바꾸지 않는다', async () => {
   const { s, dad, mom } = await family();
-  let trip = await s.createTrip(dad, { title: '여행', destination: place('부산역', 35.115) });
+  let trip = await s.createTrip(dad, { title: '여행', destination: place('부산역', 35.115), driverUserId: dad.user.id });
   trip = s.proposePlace(mom, trip.id, { place: place('시장', 35.1) });
   const before = s.tripDetail(dad, trip.id);
   s.directions = async () => { throw new Error('down'); };
@@ -90,9 +90,9 @@ test('저장했다가 다시 불러와도 계정·가족·여행·세션이 그�
   assert.equal((await restored.login({ email: 'dad@x.com', password: 'password-1234' })).user.name, '아빠');
 });
 
-test('출발 전 가족이 인스타 스토리형 제안·리액션·한마디를 남기고, 차에 타자마자 원터치로 코스를 확정해 출발할 수 있다', async () => {
+test('가족 공감과 준비 완료는 제안을 대기 상태로 두고 운전자가 확인한 코스로 출발한다', async () => {
   const { s, dad, mom, kid } = await family();
-  let trip = await s.createTrip(dad, { title: '강릉 가족 바다 여행', destination: place('강릉 안목해변', 37.772) });
+  let trip = await s.createTrip(dad, { title: '강릉 가족 바다 여행', destination: place('강릉 안목해변', 37.772), driverUserId: dad.user.id });
   // 엄마와 민지가 설렘 테마(mood)와 이유·타임캡슐 메시지를 남긴다
   trip = s.proposePlace(mom, trip.id, { place: place('강릉 중앙시장', 37.754), reason: '닭강정이랑 오징어순대 먹어요', message: '시장 입구에서 인증샷 찍기!', mood: '🍦 꼭 먹고 싶은 간식·맛집' });
   trip = s.proposePlace(kid, trip.id, { place: place('대관령 양떼목장', 37.688), reason: '양들한테 건초 주고 싶어요', message: '아빠 운전 고마워요 ❤️', mood: '🎈 아이가 손꼽아 기다린 곳' });
@@ -107,11 +107,13 @@ test('출발 전 가족이 인스타 스토리형 제안·리액션·한마디�
   assert.equal(kidProp.comments.length, 1);
   assert.equal(kidProp.by.avatar, '👧');
 
-  // 일반 구성원(엄마)도 출발 전에 '차량 탑승 준비 완료(setTripReady)'를 눌러 제안을 모두 코스에 반영할 수 있다
+  // 준비 완료나 공감은 제안을 자동으로 승인하지 않는다.
   trip = await s.setTripReady(mom, trip.id, { ready: true, autoConfirmPending: true });
   assert.equal(trip.readyForCar, true);
-  assert.equal(trip.stops.length, 2);
-  // 리액션이 더 많은 민지의 양떼목장이 1번 경유지로 자동 배치된다
+  assert.equal(trip.stops.length, 0);
+  assert.ok(trip.proposals.every(p => p.status === 'PROPOSED'));
+  trip = await s.decide(dad, kidPropId, { decision: 'CONFIRM' });
+  trip = await s.decide(dad, trip.proposals.find(p => p.status === 'PROPOSED').id, { decision: 'CONFIRM' });
   assert.equal(trip.stops[0].place.name, '대관령 양떼목장');
 
   // PC 재부팅 스냅샷 복원 후에도 readyForCar, 리액션, 코멘트, 스토리가 그대로 유지되고 차량에서 바로 출발 가능
@@ -145,4 +147,38 @@ test('출발 취소는 준비 중으로 되돌리고, 코스 비우기는 한마
   trip = await s.clearCourse(car, trip.id);
   assert.equal(trip.destination, null); assert.equal(trip.stops.length, 0); assert.equal(trip.route, null); assert.equal(trip.readyForCar, false);
   assert.deepEqual(trip.proposals.map(p => [p.place.name, p.status]), [['광안리 카페', 'PROPOSED']]);
+});
+
+test('가족방 비밀번호 6자리가 있어야 들어오고, 가족방 사진첩은 차량에서도 보인다', async () => {
+  const s = new Service({ directions: async c => ({ points: [[37, 127], [c.destination.latitude, c.destination.longitude]], distance: 1000, duration: 600 }) });
+  const user = async (email, name) => s.userActor((await s.signup({ email, password: 'password-1234', name })).token);
+  const again = async email => s.userActor((await s.login({ email, password: 'password-1234' })).token);
+  let dad = await user('pin-dad@x.com', '아빠'); const mom = await user('pin-mom@x.com', '엄마');
+  assert.throws(() => s.createFamily(dad, { name: '비번 가족', pin: '12ab' }), e => e.status === 400);
+  assert.equal(s.createFamily(dad, { name: '비번 가족', pin: '482913' }).hasPin, true);
+  dad = await again('pin-dad@x.com');
+  const code = s.createInvite(dad).code;
+  assert.equal(s.invitePreview(mom, code).needsPin, true);
+  assert.throws(() => s.joinFamily(mom, { code }), e => e.status === 403);
+  assert.throws(() => s.joinFamily(mom, { code, pin: '000000' }), e => e.status === 403);
+  assert.equal(s.joinFamily(mom, { code, pin: '482913' }).members.length, 2);
+  assert.ok(!JSON.stringify(s.exportSnapshot()).includes('482913'));
+  // 다섯 번 틀리면 맞는 번호로도 잠시 못 들어온다.
+  const kid = await user('pin-kid@x.com', '민지');
+  for (let i = 0; i < 5; i++) assert.throws(() => s.joinFamily(kid, { code, pin: '111111' }), e => e.status === 403);
+  assert.throws(() => s.joinFamily(kid, { code, pin: '482913' }), e => e.status === 429);
+  // 관리자만 바꿀 수 있다.
+  const mom2 = await again('pin-mom@x.com');
+  assert.throws(() => s.setFamilyPin(mom2, { pin: '123456' }), e => e.status === 403);
+  // 차량에서 만든 가족방도 비밀번호를 받는다.
+  const made = s.createFamilyFromVehicle({ familyName: '차에서 만든 방', vehicleName: '우리 차', pin: '135790' });
+  assert.equal(made.family.hasPin, true);
+  // 사진첩: 여행을 가리지 않고 가족방 단위로, 차량에서도.
+  const trip = await s.createTrip(dad, { title: '사진 여행', destination: place('부산역', 35.115) });
+  s.addPhoto(mom2, trip.id, { data: JPEG, caption: '바다' });
+  const car = s.vehicleActor(s.pairVehicle({ code: s.vehicleCode(dad).code, name: '아빠 차' }).vehicleToken);
+  const roll = s.familyPhotos(car);
+  assert.deepEqual(roll.map(p => [p.caption, p.by.name, p.tripTitle]), [['바다', '엄마', '사진 여행']]);
+  assert.equal(s.photo(car, roll[0].id).data, JPEG);
+  assert.equal(s.familyPhotos(s.vehicleActor(made.vehicleToken)).length, 0);
 });

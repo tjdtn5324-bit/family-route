@@ -38,17 +38,49 @@ class VehicleLink(context: Context) {
             SavedLink(o.getString("token"), o.optString("family"), o.optString("vehicle"))
         }
     } catch (_: Exception) { null }
+    private fun encode(plain: String): String {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        return Base64.encodeToString(cipher.iv + cipher.doFinal(plain.toByteArray(Charsets.UTF_8)), Base64.NO_WRAP)
+    }
+    private fun tripKey(token: String) = "trip_" + java.security.MessageDigest.getInstance("SHA-256").digest(token.toByteArray()).joinToString("") { "%02x".format(it) }
+    fun loadAll(): List<SavedLink> = try {
+        val text = prefs.getString("links", null)
+        if (text == null) listOfNotNull(load()) else {
+            val raw = Base64.decode(text, Base64.NO_WRAP)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, raw.copyOfRange(0, 12)))
+            val entries = JSONArray(String(cipher.doFinal(raw.copyOfRange(12, raw.size)), Charsets.UTF_8))
+            (0 until entries.length()).map { entries.getJSONObject(it) }.map { SavedLink(it.getString("token"), it.optString("family"), it.optString("vehicle")) }
+        }
+    } catch (_: Exception) { listOfNotNull(load()) }
+    private fun SavedLink.json() = JSONObject().put("token", token).put("family", familyName).put("vehicle", vehicleName)
     fun save(link: SavedLink): Boolean = try {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding"); cipher.init(Cipher.ENCRYPT_MODE, key())
-        val plain = JSONObject().put("token", link.token).put("family", link.familyName).put("vehicle", link.vehicleName).toString().toByteArray(Charsets.UTF_8)
-        prefs.edit().putString("link", Base64.encodeToString(cipher.iv + cipher.doFinal(plain), Base64.NO_WRAP)).commit()
+        val previous = load()
+        val entries = listOf(link) + loadAll().filterNot { it.token == link.token }
+        val array = JSONArray().also { a -> entries.forEach { a.put(it.json()) } }
+        val edit = prefs.edit().putString("link", encode(link.json().toString())).putString("links", encode(array.toString()))
+        if (previous != null) prefs.getString("trip_id", null)?.let { edit.putString(tripKey(previous.token), it) }
+        if (previous?.token != link.token) {
+            val nextTrip = prefs.getString(tripKey(link.token), null)
+            if (nextTrip == null) edit.remove("trip_id") else edit.putString("trip_id", nextTrip)
+        }
+        edit.commit()
     } catch (_: Exception) { false }
-    fun clear() { prefs.edit().remove("link").remove("trip_id").commit() }
-
+    fun clear() {
+        val current = load()
+        val remaining = loadAll().filterNot { it.token == current?.token }
+        val array = JSONArray().also { a -> remaining.forEach { a.put(it.json()) } }
+        val edit = prefs.edit().remove("link").remove("trip_id").putString("links", encode(array.toString()))
+        if (current != null) edit.remove(tripKey(current.token))
+        edit.commit()
+    }
     fun loadTripId(): String? = prefs.getString("trip_id", null)?.takeIf { it.isNotBlank() }
     fun saveTripId(tripId: String?) {
-        if (tripId.isNullOrBlank()) prefs.edit().remove("trip_id").apply()
-        else prefs.edit().putString("trip_id", tripId).apply()
+        val edit = prefs.edit()
+        if (tripId.isNullOrBlank()) edit.remove("trip_id") else edit.putString("trip_id", tripId)
+        load()?.let { if (tripId.isNullOrBlank()) edit.remove(tripKey(it.token)) else edit.putString(tripKey(it.token), tripId) }
+        edit.apply()
     }
 
     fun loadSolo(): SavedSoloDrive? = try {

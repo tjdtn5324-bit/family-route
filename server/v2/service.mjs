@@ -1,5 +1,5 @@
 // 아빠어디가 2판 서비스 로직.
-// 구조: 사용자 계정 → 가족 그룹(한 사람은 한 번에 한 가족) → 여행 → 장소 제안·사진.
+// 구조: 사용자 계정 → 여러 가족 그룹 소속과 현재 선택한 가족 → 여행 → 장소 제안·사진.
 // 차량은 가족 그룹에 연결된 별도 주체이며, 계정과 섞지 않는다.
 // 모든 읽기·쓰기는 여기서 "누가(actor) 어느 가족의 무엇에" 접근하는지 검사한다. 화면에서 가리는 것만으로는 막지 않는다.
 import { randomBytes, randomInt, randomUUID, createHash, scrypt as scryptCb, timingSafeEqual } from 'node:crypto';
@@ -18,11 +18,14 @@ const VEHICLE_CODE_TTL = 10 * 60 * 1000;
 const LIMITS = { users: 2000, families: 1000, membersPerFamily: 20, tripsPerFamily: 60, proposalsPerTrip: 100, stopsPerTrip: 5, photosPerTrip: 30, vehiclesPerFamily: 5, courses: 2000, reviewsPerCourse: 500 };
 const WEEK = 7 * DAY;
 const INVITE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // 헷갈리는 0/O, 1/I 제외
-// 차량이 실제 위치를 아직 받지 못하므로 출발지는 서울 시연 좌표로 둔다.
+// 유효한 Pleos 차량 위치가 전달되지 않은 경우에만 서울 시연 좌표를 사용한다.
 export const DEMO_ORIGIN = { name: '서울 (시연 출발지)', latitude: 37.5133, longitude: 127.1002, address: '' };
 
 const clean = (v, max) => typeof v === 'string' ? [...v.trim()].slice(0, max).join('') : '';
 const hashToken = t => createHash('sha256').update(String(t)).digest('hex');
+/** 가족방 비밀번호(숫자 6자리)는 원문을 저장하지 않고, 가족마다 다른 값이 되도록 가족 id와 함께 해시한다. */
+const pinHash = (familyId, pin) => hashToken(familyId + ':family-pin:' + pin);
+const PIN_TRIES = 5, PIN_LOCK = 10 * 60 * 1000;
 const newToken = () => randomBytes(32).toString('base64url');
 const isEmail = e => /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/.test(e);
 
@@ -100,6 +103,15 @@ export class Service {
     return s;
   }
 
+  /** 저장 실패 때 메모리와 디스크의 계정·세션 상태를 다시 맞춘다. 실행기의 Service 참조는 유지한다. */
+  restoreSnapshot(snapshot) {
+    const restored = Service.fromSnapshot(snapshot, { directions: this.#directions, now: this.#now });
+    this.#users = restored.#users; this.#emails = restored.#emails; this.#sessions = restored.#sessions;
+    this.#families = restored.#families; this.#invites = restored.#invites; this.#vehicleCodes = restored.#vehicleCodes;
+    this.#vehicles = restored.#vehicles; this.#trips = restored.#trips; this.#proposals = restored.#proposals; this.#photos = restored.#photos;
+    this.#courses = restored.#courses; this.#likes = restored.#likes; this.#reviews = restored.#reviews;
+  }
+
   // ───────── 계정 ─────────
   async signup({ email, password, name }) {
     const e = clean(email, 254).toLowerCase(), n = clean(name, 20);
@@ -151,8 +163,9 @@ export class Service {
     if (!s || s.expiresAt <= this.#now()) { if (s) this.#sessions.delete(hashToken(token)); fail(401, '로그인이 끝났어요. 다시 로그인해 주세요'); }
     const user = this.#users.get(s.userId);
     if (!user) fail(401, '로그인해 주세요');
-    const family = this.#familyOf(user.id);
-    return { kind: 'user', user, family, role: family?.members.find(m => m.userId === user.id).role || null };
+    const family = this.#familyOf(user.id, s.familyId || user.selectedFamilyId);
+    s.familyId = family?.id || null;
+    return { kind: 'user', user, session: s, family, role: family?.members.find(m => m.userId === user.id).role || null };
   }
   /** 차량: 가족이 연결해 준 차량 토큰으로만 만든다. 가족에서 차량을 지우면 즉시 401. */
   vehicleActor(token) {
@@ -164,10 +177,33 @@ export class Service {
     vehicle.lastSeenAt = this.#now();
     return { kind: 'vehicle', vehicle, family, role: 'VEHICLE' };
   }
-  #requireFamily(actor) { if (!actor.family || !this.#families.has(actor.family.id)) fail(404, '아직 가족이 없어요. 가족을 만들거나 초대를 받아 주세요'); return actor.family; }
+  #requireFamily(actor) {
+    const family = actor.family && this.#families.get(actor.family.id);
+    const member = actor.kind === 'user' && family?.members.find(m => m.userId === actor.user.id);
+    if (!family || (actor.kind === 'user' && !member)) fail(404, '아직 가족이 없어요. 가족을 만들거나 초대를 받아 주세요');
+    if (member) actor.role = member.role;
+    return family;
+  }
   #requireMember(actor) { if (actor.kind !== 'user') fail(403, '가족 구성원만 할 수 있어요'); return this.#requireFamily(actor); }
   #requireAdmin(actor) { const f = this.#requireMember(actor); if (actor.role !== 'ADMIN') fail(403, '가족 관리자만 할 수 있어요'); return f; }
-  #familyOf(userId) { for (const f of this.#families.values()) if (f.members.some(m => m.userId === userId)) return f; return null; }
+  #familiesOf(userId) { return [...this.#families.values()].filter(f => f.members.some(m => m.userId === userId)); }
+  #familyOf(userId, selectedId) {
+    const memberships = this.#familiesOf(userId);
+    return memberships.find(f => f.id === selectedId) || memberships[0] || null;
+  }
+  #selectFamily(actor, family) {
+    actor.user.selectedFamilyId = family?.id || null;
+    if (actor.session) actor.session.familyId = family?.id || null;
+    actor.family = family;
+    actor.role = family?.members.find(m => m.userId === actor.user.id)?.role || null;
+  }
+  selectFamily(actor, { familyId } = {}) {
+    if (actor.kind !== 'user') fail(403, '가족 구성원만 선택할 수 있어요');
+    const family = this.#families.get(familyId);
+    if (!family?.members.some(m => m.userId === actor.user.id)) fail(404, '가입한 가족방을 찾을 수 없어요');
+    this.#selectFamily(actor, family);
+    return this.me(actor);
+  }
   #name(userId) { return userId === 'VEHICLE' ? '차량' : this.#users.get(userId)?.name || '떠난 가족'; }
   #avatar(userId) {
     if (userId === 'VEHICLE') return '🚗';
@@ -182,23 +218,36 @@ export class Service {
 
   // ───────── 내 정보 ─────────
   me(actor) {
-    return { user: this.#userView(actor.user), family: actor.family ? this.#familyView(actor.family, actor.user.id) : null };
+    return { user: this.#userView(actor.user), family: actor.family ? this.#familyView(actor.family, actor.user.id) : null, families: this.#familiesOf(actor.user.id).map(f => this.#familyView(f, actor.user.id)) };
   }
   #familyView(f, viewerId) {
     const order = { ADMIN: 0, MEMBER: 1 };
-    return { id: f.id, name: f.name, createdAt: f.createdAt, myRole: f.members.find(m => m.userId === viewerId)?.role || null,
+    return { id: f.id, name: f.name, hasPin: Boolean(f.pinHash), createdAt: f.createdAt, myRole: f.members.find(m => m.userId === viewerId)?.role || null,
       members: f.members.slice().sort((a, b) => order[a.role] - order[b.role] || a.joinedAt - b.joinedAt).map(m => ({ id: m.userId, name: this.#name(m.userId), avatar: this.#avatar(m.userId), role: m.role, joinedAt: m.joinedAt, me: m.userId === viewerId })),
       vehicles: [...this.#vehicles.values()].filter(v => v.familyId === f.id).map(v => ({ id: v.id, name: v.name, pairedAt: v.pairedAt, lastSeenAt: v.lastSeenAt || null })) };
   }
 
   // ───────── 가족 그룹 ─────────
-  createFamily(actor, { name }) {
+  /** 가족방 비밀번호를 정한다. 비어 있으면 비밀번호 없이 둔다. */
+  #applyPin(f, pin) {
+    if (pin === undefined || pin === null || pin === '') { delete f.pinHash; delete f.pinFails; return; }
+    if (!/^\d{6}$/.test(String(pin))) fail(400, '가족방 비밀번호는 숫자 6자리로 정해 주세요');
+    f.pinHash = pinHash(f.id, String(pin)); delete f.pinFails;
+  }
+  /** 관리자가 가족방 비밀번호를 정하거나 바꾼다. 이미 들어와 있는 가족은 그대로다. */
+  setFamilyPin(actor, { pin } = {}) {
+    const f = this.#requireAdmin(actor);
+    this.#applyPin(f, pin);
+    return this.#familyView(f, actor.user.id);
+  }
+  createFamily(actor, { name, pin }) {
     if (actor.kind !== 'user') fail(403, '가족 구성원만 할 수 있어요');
-    if (actor.family) fail(409, '이미 가족에 속해 있어요. 새 가족을 만들려면 지금 가족에서 먼저 나와 주세요');
     const n = clean(name, 30); if (!n) fail(400, '가족 이름을 적어 주세요');
     if (this.#families.size >= LIMITS.families) fail(503, '지금은 가족을 만들 수 없어요');
     const f = { id: randomUUID(), name: n, createdAt: this.#now(), members: [{ userId: actor.user.id, role: 'ADMIN', joinedAt: this.#now() }] };
+    this.#applyPin(f, pin);
     this.#families.set(f.id, f);
+    this.#selectFamily(actor, f);
     this.#ensureInvite(f.id, true);
     return this.#familyView(f, actor.user.id);
   }
@@ -235,17 +284,28 @@ export class Service {
   invitePreview(actor, code) {
     if (actor.kind !== 'user') fail(403, '로그인해 주세요');
     const f = this.#families.get(this.#invite(code).familyId);
-    return { familyName: f.name, memberCount: f.members.length, alreadyMember: f.members.some(m => m.userId === actor.user.id) };
+    return { familyId: f.id, familyName: f.name, memberCount: f.members.length, alreadyMember: f.members.some(m => m.userId === actor.user.id), needsPin: Boolean(f.pinHash) };
   }
-  joinFamily(actor, { code }) {
+  joinFamily(actor, { code, pin }) {
     if (actor.kind !== 'user') fail(403, '로그인해 주세요');
     const f = this.#families.get(this.#invite(code).familyId);
-    if (actor.family?.id === f.id) return this.#familyView(f, actor.user.id);
-    if (actor.family) fail(409, '이미 다른 가족에 속해 있어요. 지금 가족에서 먼저 나온 뒤 참여해 주세요');
+    if (f.members.some(m => m.userId === actor.user.id)) { this.#selectFamily(actor, f); return this.#familyView(f, actor.user.id); }
     if (f.members.length >= LIMITS.membersPerFamily) fail(409, '이 가족은 인원이 가득 찼어요');
+    if (f.pinHash) {
+      // 여섯 자리는 짧아서, 다섯 번 틀리면 10분 동안 그 가족방의 참여를 잠근다.
+      const now = this.#now();
+      if (f.pinFails?.until > now) fail(429, '비밀번호를 여러 번 틀렸어요. 10분 뒤에 다시 시도해 주세요');
+      if (!/^\d{6}$/.test(String(pin ?? '')) || pinHash(f.id, String(pin)) !== f.pinHash) {
+        const count = (f.pinFails?.until ? 0 : f.pinFails?.count || 0) + 1;
+        f.pinFails = count >= PIN_TRIES ? { count: 0, until: now + PIN_LOCK } : { count };
+        fail(403, '가족방 비밀번호가 맞지 않아요. 방을 만든 가족에게 숫자 6자리를 물어봐 주세요');
+      }
+      delete f.pinFails;
+    }
     // 차량에서 먼저 만든 가족방에 첫 번째로 들어오는 구성원은 자동으로 관리자가 된다.
     const role = f.members.some(m => m.role === 'ADMIN') ? 'MEMBER' : 'ADMIN';
     f.members.push({ userId: actor.user.id, role, joinedAt: this.#now() });
+    this.#selectFamily(actor, f);
     return this.#familyView(f, actor.user.id);
   }
   /**
@@ -265,8 +325,9 @@ export class Service {
     }
     if (deleteMyPhotos) for (const [id, p] of this.#photos) if (p.familyId === f.id && p.userId === me) this.#photos.delete(id);
     f.members = others;
-    if (!others.length) { this.#deleteFamily(f.id); return { familyDeleted: true }; }
-    return { familyDeleted: false };
+    if (!others.length) this.#deleteFamily(f.id);
+    this.#selectFamily(actor, this.#familyOf(me));
+    return { familyDeleted: !others.length };
   }
   removeMember(actor, userId) {
     const f = this.#requireAdmin(actor);
@@ -319,10 +380,11 @@ export class Service {
     return { vehicleToken: token, vehicle: { id: vehicle.id, name: vehicle.name }, family: { id: f.id, name: f.name } };
   }
   /** 차량 OS에서 바로 새 가족방을 만들고 이 차량을 연결한 뒤, 휴대폰 참가자용 초대 코드를 함께 돌려준다. */
-  createFamilyFromVehicle({ familyName, vehicleName } = {}) {
+  createFamilyFromVehicle({ familyName, vehicleName, pin } = {}) {
     const fn = clean(familyName, 30); if (!fn) fail(400, '가족방 이름을 적어 주세요');
     if (this.#families.size >= LIMITS.families) fail(503, '지금은 가족을 만들 수 없어요');
     const f = { id: randomUUID(), name: fn, createdAt: this.#now(), members: [] };
+    this.#applyPin(f, pin);
     this.#families.set(f.id, f);
     const token = newToken();
     const vehicle = { id: randomUUID(), familyId: f.id, name: clean(vehicleName, 30) || '우리 차', tokenHash: hashToken(token), pairedAt: this.#now(), lastSeenAt: this.#now() };
@@ -331,7 +393,7 @@ export class Service {
     return {
       vehicleToken: token,
       vehicle: { id: vehicle.id, name: vehicle.name },
-      family: { id: f.id, name: f.name, inviteCode: inv.code, inviteExpiresAt: inv.expiresAt, members: [] }
+      family: { id: f.id, name: f.name, hasPin: Boolean(f.pinHash), inviteCode: inv.code, inviteExpiresAt: inv.expiresAt, members: [] }
     };
   }
   vehicleInvite(actor) {
@@ -362,6 +424,7 @@ export class Service {
       family: {
         id: actor.family.id,
         name: actor.family.name,
+        hasPin: Boolean(actor.family.pinHash),
         inviteCode: inv.code,
         inviteExpiresAt: inv.expiresAt,
         members: actor.family.members.map(m => ({ id: m.userId, name: this.#name(m.userId), role: m.role }))
@@ -376,6 +439,8 @@ export class Service {
     return t;
   }
   /** 여행을 정리할 수 있는 사람: 관리자, 여행을 만든 사람, 운전자, 연결된 차량. */
+  #canDecide(actor, t) { return actor.kind === 'vehicle' || (actor.kind === 'user' && t.driverUserId === actor.user.id); }
+  #requireDecide(actor, t) { if (!this.#canDecide(actor, t)) fail(403, '지정한 운전자나 연결된 차량에서 확인해 주세요'); }
   #canManage(actor, t) { return actor.kind === 'vehicle' || actor.role === 'ADMIN' || t.createdBy === actor.user.id || t.driverUserId === actor.user.id; }
   #requireManage(actor, t) { if (!this.#canManage(actor, t)) fail(403, '여행을 만든 사람, 운전자, 가족 관리자만 정할 수 있어요'); }
   #checkDriver(f, userId) { if (userId !== null && userId !== undefined && userId !== '' && !f.members.some(m => m.userId === userId)) fail(400, '운전자는 가족 구성원 중에서 골라 주세요'); return userId || null; }
@@ -384,7 +449,7 @@ export class Service {
     const f = this.#requireFamily(actor), rank = { ONGOING: 0, PLANNING: 1, DONE: 2 };
     return [...this.#trips.values()].filter(t => t.familyId === f.id)
       .sort((a, b) => rank[a.status] - rank[b.status] || (a.status === 'DONE' ? b.finishedAt - a.finishedAt : (Number(Boolean(b.readyForCar)) - Number(Boolean(a.readyForCar))) || (b.readyAt || 0) - (a.readyAt || 0) || String(a.date || '9').localeCompare(String(b.date || '9')) || a.createdAt - b.createdAt))
-      .map(t => this.#tripSummary(t));
+      .map(t => ({...this.#tripSummary(t), canManage:this.#canManage(actor, t)}));
   }
   #tripSummary(t) {
     const ps = [...this.#proposals.values()].filter(p => p.tripId === t.id);
@@ -411,7 +476,7 @@ export class Service {
       reactions: reactionCounts, totalReactions, myReaction: me ? reactionsObj[me] || null : null,
       comments: (p.comments || []).map(c => ({ id: c.id, text: c.text, createdAt: c.createdAt, by: { id: c.userId, name: this.#name(c.userId), avatar: this.#avatar(c.userId) } })),
       photos: placePhotos,
-      visitedAt: p.visitedAt || null, canDelete: me !== null && (p.userId === me && p.status === 'PROPOSED' || this.#canManage(actor, t))
+      visitedAt: p.visitedAt || null, canDecide: this.#canDecide(actor, t), canDelete: me !== null && (p.userId === me && p.status === 'PROPOSED' || this.#canManage(actor, t))
     };
   }
   tripDetail(actor, tripId) {
@@ -419,7 +484,7 @@ export class Service {
     const ps = [...this.#proposals.values()].filter(p => p.tripId === t.id).sort((a, b) => a.createdAt - b.createdAt);
     const allPhotos = [...this.#photos.values()].filter(p => p.tripId === t.id).sort((a, b) => a.createdAt - b.createdAt);
     const view = p => this.#proposalView(p, t, actor, me, allPhotos);
-    return { ...this.#tripSummary(t), origin: t.origin, createdBy: { id: t.createdBy, name: this.#name(t.createdBy), avatar: this.#avatar(t.createdBy) }, canManage: this.#canManage(actor, t),
+    return { ...this.#tripSummary(t), origin: t.origin, createdBy: { id: t.createdBy, name: this.#name(t.createdBy), avatar: this.#avatar(t.createdBy) }, canManage: this.#canManage(actor, t), canDecide: this.#canDecide(actor, t),
       stops: t.stops.map(id => this.#proposals.get(id)).filter(Boolean).map(view), proposals: ps.filter(p => !t.stops.includes(p.id)).map(view),
       route: t.route ? { distance: t.route.distance, duration: t.route.duration, points: t.route.points, version: t.routeVersion } : null,
       routeError: t.routeError || null,
@@ -473,28 +538,40 @@ export class Service {
   }
   /** 목적지·들르는 곳이 바뀌면 경로를 다시 찾는다. 경로를 못 찾으면 이전 상태를 그대로 둔다. */
   /** 가족 연결 없이 혼자 운전할 때의 경로. 개인 자료를 읽거나 저장하지 않는다. */
-  async soloRoute({ destination, waypoints = [] } = {}) {
+  async soloRoute({ destination, waypoints = [], origin } = {}) {
     const to = validPlace(destination);
+    const from = origin == null ? { ...DEMO_ORIGIN } : validPlace(origin);
     if (!Array.isArray(waypoints) || waypoints.length > LIMITS.stopsPerTrip) fail(400, `들르는 곳은 ${LIMITS.stopsPerTrip}곳까지예요`);
     const via = waypoints.map(validPlace);
     if (!this.#directions) fail(503, '길찾기를 지금 쓸 수 없어요');
     let route;
-    try { route = await this.#directions({ origin: { ...DEMO_ORIGIN }, destination: to, waypoints: via }); }
+    try { route = await this.#directions({ origin: from, destination: to, waypoints: via }); }
     catch { fail(502, '경로를 찾지 못했어요. 잠시 후 다시 시도해 주세요'); }
-    return { origin: { ...DEMO_ORIGIN }, destination: to, waypoints: via, route: { points: route.points, distance: route.distance, duration: route.duration } };
+    return { origin: from, destination: to, waypoints: via, route: { points: route.points, distance: route.distance, duration: route.duration } };
   }
 
-  async #reroute(t, destination, stops) {
+  /** 연결된 차량만 출발 직전에 차량 출발지를 반영한다. 위치 이력은 수집하지 않는다. */
+  async setVehicleOrigin(actor, tripId, origin) {
+    const t = this.#trip(actor, tripId);
+    if (actor.kind !== 'vehicle') fail(403, '연결된 차량에서만 출발지를 바꿀 수 있어요');
+    this.#requireManage(actor, t);
+    if (t.status !== 'PLANNING') fail(409, '출발 전 여행에서만 출발지를 바꿀 수 있어요');
+    const next = validPlace(origin);
+    await this.#reroute(t, t.destination, t.stops, next);
+    return this.tripDetail(actor, tripId);
+  }
+
+  async #reroute(t, destination, stops, origin = t.origin) {
     const version = t.routeVersion;
     let route = null;
     if (destination && this.#directions) {
       const waypoints = stops.map(id => this.#proposals.get(id)?.place).filter(Boolean);
-      try { route = await this.#directions({ origin: t.origin, destination, waypoints }); }
+      try { route = await this.#directions({ origin, destination, waypoints }); }
       catch (e) { fail(502, '경로를 찾지 못했어요. 잠시 후 다시 시도해 주세요'); }
       if (!this.#trips.has(t.id)) fail(404, '여행을 찾을 수 없어요');
       if (t.routeVersion !== version) fail(409, '그 사이 다른 가족이 경로를 바꿨어요. 다시 확인해 주세요');
     }
-    t.destination = destination; t.stops = stops; t.route = route; t.routeError = null; t.routeVersion++;
+    t.origin = origin; t.destination = destination; t.stops = stops; t.route = route; t.routeError = null; t.routeVersion++;
   }
 
   // ───────── 장소 제안·스토리 ─────────
@@ -556,7 +633,7 @@ export class Service {
   }
   /** CONFIRM: 들르는 곳이면 경로 끝에 더하고, 목적지면 목적지를 바꾼다. DECLINE: 이번에는 가지 않는다. */
   async decide(actor, proposalId, { decision }) {
-    const { p, t } = this.#proposal(actor, proposalId); this.#requireManage(actor, t);
+    const { p, t } = this.#proposal(actor, proposalId); this.#requireDecide(actor, t);
     if (t.status === 'DONE') fail(409, '끝난 여행이에요');
     if (p.status !== 'PROPOSED') fail(409, '이미 정해진 제안이에요');
     if (decision === 'DECLINE') { p.status = 'DECLINED'; return this.tripDetail(actor, t.id); }
@@ -589,15 +666,11 @@ export class Service {
     catch (e) { this.#proposals.delete(p.id); throw e; }
     return this.tripDetail(actor, t.id);
   }
-  /**
-   * 출발 전 가족이 다같이 짠 코스를 '차량 탑승 준비 완료(readyForCar)' 상태로 만든다.
-   * autoConfirmPending=true이면 아직 대기 중인 목적지·경유지 제안을 가족 공감(리액션+좋아요) 순으로 경로에 자동 반영해,
-   * 차에 타자마자 원터치로 바로 출발할 수 있게 해 준다.
-   */
-  async setTripReady(actor, tripId, { ready = true, autoConfirmPending = true } = {}) {
+  /** 준비 표시는 가족이 요청할 수 있다. 대기 제안은 개별 운전자 확인 전까지 그대로 둔다. */
+  async setTripReady(actor, tripId, { ready = true, autoConfirmPending = false } = {}) {
     const t = this.#trip(actor, tripId);
     if (t.status === 'DONE') fail(409, '끝난 여행은 바꿀 수 없어요');
-    if (autoConfirmPending && ready) {
+    if (autoConfirmPending && ready && this.#canDecide(actor, t)) {
       const pending = [...this.#proposals.values()].filter(p => p.tripId === t.id && p.status === 'PROPOSED');
       const score = p => {
         const votes = Object.values(p.votes || {});
@@ -641,15 +714,13 @@ export class Service {
     t.readyBy = ready ? (actor.kind === 'user' ? actor.user.id : 'VEHICLE') : null;
     return this.tripDetail(actor, t.id);
   }
-  /** 차량(또는 운전자)에서 대기 중인 가족 제안을 모두 코스에 반영하고 즉시 길안내를 출발(ONGOING)한다. */
+  /** 차량의 일괄 확인·출발은 제안을 함께 담는다. 휴대폰 빠른 출발은 이미 확정한 경로만 쓴다. */
   async quickStartTrip(actor, tripId) {
-    const t = this.#trip(actor, tripId); this.#requireManage(actor, t);
-    await this.setTripReady(actor, tripId, { ready: true, autoConfirmPending: true });
-    if (t.status === 'PLANNING') {
-      if (!t.destination) fail(409, '목적지나 제안된 장소가 아직 없어요. 목적지를 먼저 골라 주세요');
-      return this.startTrip(actor, tripId);
-    }
-    return this.tripDetail(actor, t.id);
+    const t = this.#trip(actor, tripId); this.#requireDecide(actor, t);
+    if (t.status === 'DONE') fail(409, '끝난 여행은 바꿀 수 없어요');
+    await this.setTripReady(actor, tripId, { ready: true, autoConfirmPending: actor.kind === 'vehicle' });
+    if (!t.destination) fail(409, '목적지를 먼저 정하고 제안을 확인해 주세요');
+    return t.status === 'PLANNING' ? this.startTrip(actor, tripId) : this.tripDetail(actor, tripId);
   }
   /** 추천 코스(및 편집한 경유지 목록)를 현재 가족 여행의 경로에 바로 적용한다. */
   async applyCourse(actor, tripId, { courseId, waypoints = null, destination = null } = {}) {
@@ -753,6 +824,14 @@ export class Service {
     const photo = { id: randomUUID(), tripId: t.id, familyId: t.familyId, userId: actor.user.id, proposalId: proposalId || null, caption: clean(caption, 120), data, createdAt: this.#now() };
     this.#photos.set(photo.id, photo);
     return { id: photo.id, caption: photo.caption };
+  }
+  /** 가족방 사진첩: 여행을 가리지 않고 이 가족방에 올라온 사진을 새것부터 모아 준다. 연결된 차량에서도 볼 수 있다. */
+  familyPhotos(actor) {
+    const f = this.#requireFamily(actor), me = actor.kind === 'user' ? actor.user.id : null;
+    return [...this.#photos.values()].filter(p => p.familyId === f.id).sort((a, b) => b.createdAt - a.createdAt).map(p => ({
+      id: p.id, caption: p.caption || '', createdAt: p.createdAt, by: { id: p.userId, name: this.#name(p.userId) },
+      tripId: p.tripId, tripTitle: this.#trips.get(p.tripId)?.title || '', placeName: p.proposalId ? this.#proposals.get(p.proposalId)?.place?.name || '' : '',
+      canDelete: me !== null && (p.userId === me || actor.role === 'ADMIN') }));
   }
   photo(actor, photoId) {
     const f = this.#requireFamily(actor), p = this.#photos.get(photoId);
@@ -860,7 +939,7 @@ export class Service {
     const f = this.#requireFamily(actor);
     return [...this.#trips.values()].filter(t => t.familyId === f.id && t.status === 'DONE').sort((a, b) => b.finishedAt - a.finishedAt).map(t => {
       const visited = t.stops.map(id => this.#proposals.get(id)).filter(p => p?.status === 'VISITED');
-      return { ...this.#tripSummary(t), visitedCount: visited.length };
+      return { ...this.#tripSummary(t), canManage:this.#canManage(actor, t), visitedCount: visited.length };
     });
   }
 }

@@ -4,6 +4,17 @@
     <!-- 같은 Wi-Fi의 가족 폰에 결정 결과를 보내는 로컬 서버 -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
+    <!-- Pleos Connect 음성 안내(TTS) 서비스 사용 -->
+    <uses-permission android:name="pleos.car.permission.TTS_SERVICE" />
+    <uses-permission android:name="pleos.car.permission.FUSED_LOCATION" />
+    <uses-permission android:name="pleos.car.permission.CAR_DOORS" />
+
+    <!-- Android 11+: 음성 안내(TTS) 엔진을 찾으려면 선언이 필요하다 -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 
     <uses-feature
         android:name="android.hardware.type.automotive"

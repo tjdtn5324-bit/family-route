@@ -22,10 +22,25 @@ const sessionCookie = (req, token, maxAge) => `${COOKIE}=${token}; Path=/; HttpO
 export function createServer({ service = new Service(), apiKey = process.env.KAKAO_REST_API_KEY, search, directions, persist = null, pageFile = new URL('./app.html', import.meta.url), assets = {} } = {}) {
   if (directions) service.directions = context => directions(context, { apiKey });
   const limits = new Map();
+  let writes = Promise.resolve();
+  const commit = fn => {
+    const operation = writes.catch(() => {}).then(async () => {
+      const before = persist ? service.exportSnapshot() : null;
+      const result = await fn();
+      if (persist) {
+        try { await persist(service.exportSnapshot()); }
+        catch {
+          service.restoreSnapshot(before);
+          throw new HttpError(503, '계정과 변경 내용을 저장하지 못했어요. 잠시 후 다시 시도해 주세요');
+        }
+      }
+      return result;
+    });
+    writes = operation;
+    return operation;
+  };
   const server = http.createServer(async (req, res) => {
-    let changed = false;
     const send = (status, body, headers = {}) => {
-      if (persist && changed && status < 300) { try { persist(service.exportSnapshot()); } catch (e) { console.error('저장 실패', e.message); } }
       res.writeHead(status, { ...json, ...headers }); res.end(JSON.stringify(body));
     };
     try {
@@ -59,22 +74,26 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
         for await (const c of req) { size += c.length; if (size > maxSize) throw new HttpError(413, '요청이 너무 커요'); chunks.push(c); }
         return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
       };
+      if (method === 'GET') await writes.catch(() => {});
       const bearer = String(req.headers.authorization || '').replace(/^Bearer /, '');
       // 차량 요청은 Authorization 헤더로, 사람 요청은 쿠키로만 인증한다(서로 섞지 않는다).
       const actor = () => bearer ? service.vehicleActor(bearer) : service.userActor(readCookie(req, COOKIE));
       const user = () => service.userActor(readCookie(req, COOKIE));
-      const write = async (fn, status = 200) => { const result = await fn(); changed = true; return send(status, result ?? { ok: true }); };
+      const write = async (fn, status = 200) => { const result = await commit(fn); return send(status, result ?? { ok: true }); };
       const m = (re) => path.match(re);
       let p;
 
       // ── 계정 ──
-      if (method === 'POST' && path === '/api/auth/signup') { const b = await body(); const r = await service.signup(b); changed = true; return send(201, { user: r.user }, { 'Set-Cookie': sessionCookie(req, r.token, 30 * 86400) }); }
-      if (method === 'POST' && path === '/api/auth/login') { const b = await body(); const r = await service.login(b); changed = true; return send(200, { user: r.user }, { 'Set-Cookie': sessionCookie(req, r.token, 30 * 86400) }); }
-      if (method === 'POST' && path === '/api/auth/logout') { service.logout(readCookie(req, COOKIE)); changed = true; return send(200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) }); }
+      if (method === 'POST' && path === '/api/auth/signup') { const b = await body(); const r = await commit(() => service.signup(b)); return send(201, { user: r.user }, { 'Set-Cookie': sessionCookie(req, r.token, 30 * 86400) }); }
+      if (method === 'POST' && path === '/api/auth/login') { const b = await body(); const r = await commit(() => service.login(b)); return send(200, { user: r.user }, { 'Set-Cookie': sessionCookie(req, r.token, 30 * 86400) }); }
+      if (method === 'POST' && path === '/api/auth/logout') { await commit(() => service.logout(readCookie(req, COOKIE))); return send(200, { ok: true }, { 'Set-Cookie': sessionCookie(req, '', 0) }); }
       if (method === 'GET' && path === '/api/me') return send(200, service.me(user()));
 
       // ── 가족 ──
+      if (method === 'POST' && path === '/api/family/select') return await write(async () => service.selectFamily(user(), await body()));
       if (method === 'POST' && path === '/api/family') return await write(async () => service.createFamily(user(), await body()), 201);
+      if (method === 'POST' && path === '/api/family/pin') return await write(async () => service.setFamilyPin(user(), await body()));
+      if (method === 'GET' && path === '/api/family/photos') return send(200, { photos: service.familyPhotos(actor()) });
       if (method === 'POST' && path === '/api/family/rename') return await write(async () => service.renameFamily(user(), await body()));
       if (method === 'POST' && path === '/api/family/invite') return await write(async () => { await body(); return service.createInvite(user()); });
       if (method === 'GET' && path === '/api/family/invite') return send(200, service.invitePreview(user(), url.searchParams.get('code')));
@@ -96,7 +115,7 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
       // ── 장소 검색과 혼자 운전하는 경로 ──
       // 로그인이나 가족 연결 없이도 쓸 수 있다(차량은 가족과 연결하지 않아도 길안내가 되어야 한다).
       // 개인 자료를 읽거나 남기지 않고, IP별 요청 수만 제한한다.
-      if (method === 'GET' && path === '/api/places') { if (!search) throw new HttpError(503, '장소 검색을 지금 쓸 수 없어요'); return send(200, { places: await search(url.searchParams.get('q'), { apiKey }) }); }
+      if (method === 'GET' && path === '/api/places') { if (!search) throw new HttpError(503, '장소 검색을 지금 쓸 수 없어요'); const result = await search(url.searchParams.get('q'), { apiKey }); return send(200, Array.isArray(result) ? { places: result } : result); }
       if (method === 'POST' && path === '/api/drive/route') return send(200, await service.soloRoute(await body()));
 
       // ── 추천 코스 ──
@@ -130,8 +149,8 @@ export function createServer({ service = new Service(), apiKey = process.env.KAK
         if (action === 'course') return await write(async () => service.applyCourse(actor(), id, await body()));
         if (action === 'order') return await write(async () => service.reorderStops(actor(), id, await body()));
         if (action === 'ready') return await write(async () => service.setTripReady(actor(), id, await body()));
-        if (action === 'quick-start') return await write(async () => { await body(); return service.quickStartTrip(actor(), id); });
-        if (action === 'start') return await write(async () => { await body(); return service.startTrip(actor(), id); });
+        if (action === 'quick-start') return await write(async () => { const data = await body(); const a = actor(); if (data.origin != null) await service.setVehicleOrigin(a, id, data.origin); return service.quickStartTrip(a, id); });
+        if (action === 'start') return await write(async () => { const data = await body(); const a = actor(); if (data.origin != null) await service.setVehicleOrigin(a, id, data.origin); return service.startTrip(a, id); });
         if (action === 'cancel-start') return await write(async () => { await body(); return service.cancelStart(actor(), id); });
         if (action === 'clear-course') return await write(async () => { await body(); return service.clearCourse(actor(), id); });
         if (action === 'finish') return await write(async () => { await body(); return service.finishTrip(actor(), id); });

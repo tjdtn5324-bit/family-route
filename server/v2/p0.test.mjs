@@ -102,13 +102,16 @@ test('5. 가족 초대와 가입, 일반 구성원 탈퇴가 정상적으로 작
   assert.equal((await b.call('/api/family/join', { data: { code: invite.code.toLowerCase() } })).status, 200);
   assert.equal((await c.call('/api/family/join', { data: { code: invite.code } })).status, 200);
   assert.deepEqual((await a.call('/api/me')).body.family.members.map(m => [m.name, m.role]), [['엄마', 'ADMIN'], ['아빠', 'MEMBER'], ['할머니', 'MEMBER']]);
-  // 한 사람은 한 가족에만: 다른 가족에 들어가려면 먼저 나와야 한다.
+  // 다른 가족방에 참여해도 기존 소속은 유지한다.
   const d = browser(base); await signup(d, 'd@example.com', '삼촌'); await d.call('/api/family', { data: { name: '삼촌네' } });
   const other = (await d.call('/api/family/invite', { data: {} })).body;
-  assert.equal((await b.call('/api/family/join', { data: { code: other.code } })).status, 409);
+  assert.equal((await b.call('/api/family/join', { data: { code: other.code } })).status, 200);
+  assert.equal((await b.call('/api/me')).body.families.length, 2);
+  await b.call('/api/family/select', { data: { familyId: (await a.call('/api/me')).body.family.id } });
   // 일반 구성원은 언제든 나갈 수 있다.
   assert.equal((await b.call('/api/family/leave', { data: {} })).status, 200);
-  assert.equal((await b.call('/api/me')).body.family, null);
+  assert.equal((await b.call('/api/me')).body.family.name, '삼촌네');
+  assert.equal((await b.call('/api/me')).body.families.length, 1);
   assert.equal((await b.call('/api/family/join', { data: { code: other.code } })).status, 200);
   // 관리자가 구성원을 내보내면 즉시 권한이 없어진다.
   const cMember = (await a.call('/api/me')).body.family.members.find(m => m.name === '할머니');

@@ -24,7 +24,7 @@ async function world() {
 }
 /** A 가족이 부산 여행을 다녀온다(경유지 2곳 중 1곳만 공개 예정). */
 async function doneTrip(s, a1, a2) {
-  let t = await s.createTrip(a1, { title: '우리끼리 부산', destination: place('부산역', 35.115) });
+  let t = await s.createTrip(a1, { title: '우리끼리 부산', destination: place('부산역', 35.115), driverUserId: a1.user.id });
   t = s.proposePlace(a2, t.id, { place: place('비밀 맛집', 35.12), reason: '할머니 단골집', message: '엄마 생일' });
   t = s.proposePlace(a2, t.id, { place: place('광안리', 35.153), reason: '야경', message: '' });
   t = await s.decide(a1, t.proposals[0].id, { decision: 'CONFIRM' });

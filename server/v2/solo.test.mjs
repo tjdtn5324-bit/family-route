@@ -40,3 +40,12 @@ test('혼자 운전 경로의 입력을 확인하고, 길찾기 실패를 알려
   assert.equal((await call('/api/drive/route', { destination: busan, waypoints: Array(6).fill(busan) })).status, 400);
   assert.equal((await call('/api/drive/route', { destination: busan })).status, 502);
 });
+
+test('차량 SDK 출발지를 사용하고 잘못된 좌표는 거부한다', async t => {
+  const {call} = await start(t);
+  const origin = {name:'현재 차량 위치',latitude:36.35,longitude:127.38};
+  const result = await call('/api/drive/route',{destination:busan,origin});
+  assert.equal(result.status,200);
+  assert.deepEqual(result.body.route.points[0],[origin.latitude,origin.longitude]);
+  assert.equal((await call('/api/drive/route',{destination:busan,origin:{...origin,latitude:999}})).status,400);
+});

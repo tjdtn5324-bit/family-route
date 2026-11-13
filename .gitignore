@@ -22,3 +22,4 @@ docs/review-2026-11-10/
 *.idsig
 account-config.local.json
 .runtime/
+place-search.local.json

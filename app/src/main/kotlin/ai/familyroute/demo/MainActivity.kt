@@ -1,16 +1,15 @@
 package ai.familyroute.demo
 
 import android.content.Context
-import android.location.LocationManager
 import android.os.Bundle
-import android.speech.tts.TextToSpeech
 import android.util.Log
-import java.util.Locale
 import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -24,6 +23,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import android.graphics.BitmapFactory
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -45,7 +48,7 @@ import org.json.JSONObject
  * 가족과 연결하면(휴대폰에서 받은 숫자 6자리) 가족이 휴대폰에서 만든 여행을 보고, 제안을 경로에 담고, 출발·도착·마치기를 기록한다.
  * 차량은 사람 계정으로 로그인하지 않는다. 주행 중에는 지도만 보여 주고, 모든 조작은 정차 중에만 열린다.
  */
-private enum class Screen { MAP, SEARCH, TRIPS, FAMILY }
+private enum class Screen { MAP, SEARCH, TRIPS, FAMILY, SETTINGS }
 
 private const val ENDED = "이 차량의 가족 연결이 끝났어요. 혼자 운전은 그대로 쓸 수 있어요."
 private const val LOCKED = "주행 중에는 화면이 잠겨요\n정차(P)하면 다시 조작할 수 있어요"
@@ -56,67 +59,33 @@ private data class SoloDrive(val place: Place, val route: RouteLine, val stops: 
 }
 
 /** 추천 여행을 보는 순서: 화면 이름 → (정렬, 종류) */
-private val COURSE_VIEWS = listOf("요즘 인기" to ("trending" to ""), "좋아요순" to ("popular" to ""), "새로 올라온" to ("new" to "COMMUNITY"), "참고 코스" to ("trending" to "REFERENCE"))
-
-/** 한국어 TTS 음성 브리핑 헬퍼. 주행 중 제안 도착 안내와 정차 중 타임캡슐·인스타 스토리 음성 낭독을 지원한다. */
-private class CarTts(context: Context) {
-    private var ready = false
-    private var engine: TextToSpeech? = null
-
-    init {
-        try {
-            engine = TextToSpeech(context.applicationContext) { status ->
-                if (status == TextToSpeech.SUCCESS) {
-                    val res = engine?.setLanguage(Locale.KOREAN)
-                    ready = res != TextToSpeech.LANG_MISSING_DATA && res != TextToSpeech.LANG_NOT_SUPPORTED
-                    engine?.setSpeechRate(1.02f)
-                }
-            }
-        } catch (_: Throwable) {
-            ready = false
-        }
-    }
-
-    fun speak(text: String) {
-        val cleanText = text.replace(Regex("[✨🎉💌📍🚗🏁📸❤️🤤🔥👏🤩⚡🔒🔊▶◀✕]"), "").trim()
-        if (!ready || cleanText.isBlank()) return
-        try {
-            engine?.speak(cleanText, TextToSpeech.QUEUE_FLUSH, null, "familyroute-tts")
-        } catch (_: Throwable) {}
-    }
-
-    fun stop() {
-        try { engine?.stop() } catch (_: Throwable) {}
-    }
-
-    fun close() {
-        try {
-            engine?.stop()
-            engine?.shutdown()
-        } catch (_: Throwable) {}
-    }
-}
-
-/** 차량 위치 센서(LocationManager) 연동 상태 확인. 권한이 없거나 시연 환경이면 서울 시연 기준점으로 안전하게 Fallback한다. */
-private fun resolveVehicleOriginLabel(context: Context): String {
-    val lm = runCatching { context.getSystemService(Context.LOCATION_SERVICE) as? LocationManager }.getOrNull()
-    return if (lm != null) "차량 위치 센서 연동 · 출발 기준: 서울 (시연)" else "출발 기준: 서울 (시연)"
-}
+private val COURSE_VIEWS = listOf("요즘 인기" to ("trending" to ""), "좋아요순" to ("popular" to ""), "새로 올라온" to ("new" to "COMMUNITY"), "지자체 추천" to ("trending" to "REFERENCE"))
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
-            val api = remember { CarApi() }
+            val vehicleLocation = remember { PleosVehicleLocation(applicationContext) }
+            val vehicleDoors = remember { PleosDepartureCheck(applicationContext) }
+            val position by vehicleLocation.position.collectAsStateWithLifecycle()
+            val locationStatus by vehicleLocation.status.collectAsStateWithLifecycle()
+            val doorStatus by vehicleDoors.status.collectAsStateWithLifecycle()
+            val api = remember { CarApi(originProvider = { vehicleLocation.currentOrigin() }) }
             val linkStore = remember { VehicleLink(applicationContext) }
             val parking = remember { ParkingGuard(applicationContext) }
             val tts = remember { CarTts(applicationContext) }
-            val originLabel = remember { resolveVehicleOriginLabel(applicationContext) }
+            val speechStatus by tts.status.collectAsStateWithLifecycle()
+            val locationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+                if (granted) vehicleLocation.start()
+            }
+            val originLabel = if (position != null) "Pleos 차량 위치 · 새 경로의 출발지에 반영" else "차량 위치 대기 · 출발 기준: 서울 (시연)"
             val parked by parking.allowed.collectAsStateWithLifecycle()
-            DisposableEffect(parking, tts) { onDispose { parking.close(); tts.close() } }
+            DisposableEffect(parking, tts, vehicleLocation, vehicleDoors) { onDispose { parking.close(); tts.close(); vehicleLocation.close(); vehicleDoors.close() } }
             val scope = rememberCoroutineScope()
 
             var link by remember { mutableStateOf(linkStore.load()) }
+            var savedLinks by remember { mutableStateOf(linkStore.loadAll()) }
+            var addingFamily by remember { mutableStateOf(false) }
             var family by remember { mutableStateOf<FamilyInfo?>(null) }
             var trips by remember { mutableStateOf<List<TripSummary>>(emptyList()) }
             var tripId by remember { mutableStateOf<String?>(linkStore.loadTripId()) }
@@ -132,6 +101,7 @@ class MainActivity : ComponentActivity() {
             var confirmFinish by remember { mutableStateOf(false) }
             var confirmUnpair by remember { mutableStateOf(false) }
             var confirmCancelTrip by remember { mutableStateOf(false) }
+            var pendingDeleteTrip by remember { mutableStateOf<Pair<String, TripSummary>?>(null) }
             var pendingDestination by remember { mutableStateOf<Place?>(null) }
             var code by remember { mutableStateOf("") }
             var carName by remember { mutableStateOf("우리 차") }
@@ -154,6 +124,11 @@ class MainActivity : ComponentActivity() {
             var tripsTab by remember { mutableStateOf(0) }
             var familyTab by remember { mutableStateOf(0) }
             var joinTab by remember { mutableStateOf(0) }
+            var newFamilyPin by remember { mutableStateOf("") }
+            // 가족방 사진첩: 목록, 받아 둔 사진, 크게 보는 사진
+            var familyPhotos by remember { mutableStateOf<List<FamilyPhoto>?>(null) }
+            val photoCache = remember { mutableStateMapOf<String, ImageBitmap>() }
+            var openPhoto by remember { mutableStateOf<FamilyPhoto?>(null) }
 
             fun updateSolo(next: SoloDrive?) {
                 solo = next
@@ -164,7 +139,7 @@ class MainActivity : ComponentActivity() {
                 linkStore.saveTripId(next)
             }
             fun forget(message: String) {
-                linkStore.clear(); link = null; family = null; trips = emptyList(); trip = null; tripId = null; incoming = null; arrival = null
+                pendingDeleteTrip = null; linkStore.clear(); savedLinks = linkStore.loadAll(); photoCache.clear(); familyPhotos = null; openPhoto = null; link = null; family = null; trips = emptyList(); trip = null; tripId = null; incoming = null; arrival = null
                 confirmFinish = false; confirmUnpair = false; confirmCancelTrip = false; pendingDestination = null; showQrDialog = false; showCreateTrip = false
                 if (screen == Screen.TRIPS) screen = Screen.MAP; notice = message
             }
@@ -179,6 +154,20 @@ class MainActivity : ComponentActivity() {
                     catch (_: Exception) { error = "연결이 느리거나 끊겼어요. 잠시 후 다시 시도해 주세요." }
                     finally { busy = false }
                 }
+            }
+            fun activateFamily(saved: SavedLink, info: FamilyInfo) {
+                if (!linkStore.save(saved)) { error = "가족방 연결을 저장하지 못했어요. 다시 시도해 주세요."; return }
+                photoCache.clear(); openPhoto = null; familyPhotos = null; showQrDialog = false; pendingDeleteTrip = null
+                trips = emptyList(); trip = null; incoming = null; arrival = null
+                tripId = linkStore.loadTripId(); family = info; link = saved
+                savedLinks = linkStore.loadAll(); addingFamily = false; familyTab = 0; code = ""
+            }
+            fun switchFamily(saved: SavedLink) = run {
+                try {
+                    val info = api.home(saved.token)
+                    activateFamily(saved.copy(familyName = info.familyName, vehicleName = info.vehicleName), info)
+                    notice = "‘${info.familyName}’ 가족방으로 전환했어요."
+                } catch (e: ApiError) { error = e.message ?: "이 가족방에 다시 연결해 주세요." }
             }
             fun select(id: String) { updateTripId(id); trip = null; incoming = null; updateSolo(null); screen = Screen.MAP }
             fun openSearch(recommended: Boolean = false, addStopForSolo: Boolean = false) {
@@ -248,9 +237,8 @@ class MainActivity : ComponentActivity() {
                 val first = a.stories.firstOrNull()
                 return if (first != null) {
                     buildString {
-                        append("${a.place.name}에 도착했어요. ${first.by}님이 남긴 이야기입니다. ")
-                        if (first.reason.isNotBlank()) append("가고 싶었던 이유, ${first.reason}. ")
-                        if (first.message.isNotBlank()) append("가족에게 남긴 한마디, ${first.message}.")
+                        append("${a.place.name}에 도착했어요. ${first.by}님이 가고 싶어 한 곳이에요. ")
+                        if (first.message.isNotBlank()) append("${first.by}님이 가족에게 남긴 한마디, ${first.message}.")
                     }
                 } else {
                     "${a.place.name}에 도착했어요."
@@ -261,7 +249,7 @@ class MainActivity : ComponentActivity() {
                     if (screen != Screen.MAP || arrival != null || confirmFinish || confirmUnpair || confirmCancelTrip || pendingDestination != null || showQrDialog || openCourse != null || showCreateTrip) {
                         notice = "출발해서 화면을 닫았어요."
                     }
-                    screen = Screen.MAP; arrival = null; confirmFinish = false; confirmUnpair = false; confirmCancelTrip = false; pendingDestination = null; showQrDialog = false
+                    screen = Screen.MAP; arrival = null; confirmFinish = false; confirmUnpair = false; confirmCancelTrip = false; pendingDestination = null; showQrDialog = false; openPhoto = null; pendingDeleteTrip = null
                     openCourse = null; courseAddingStop = false; addingStopToSolo = false; showCreateTrip = false
                     tts.stop()
                 }
@@ -269,7 +257,8 @@ class MainActivity : ComponentActivity() {
             LaunchedEffect(incoming?.id, parked) {
                 val p = incoming
                 if (p != null && !parked) {
-                    tts.speak("${p.byName}님이 ${p.place.name} 경유지를 제안했어요. 정차 후 확인해 보세요.")
+                    val distance = position?.let { "차량에서 직선거리 약 ${"%.1f".format(it.distanceKmTo(p.place))}킬로미터예요. " } ?: ""
+                    tts.speak("${p.byName}님이 ${p.place.name} 경유지를 제안했어요. ${distance}정차 후 확인해 보세요.")
                     delay(4000)
                     incoming = null
                 }
@@ -279,6 +268,19 @@ class MainActivity : ComponentActivity() {
                 if (a != null && parked) {
                     tts.speak(arrivalSpeechText(a))
                 }
+            }
+            // 가족 화면의 '사진' 탭을 열면 목록을 받고, 아직 없는 사진을 차례로 받는다.
+            LaunchedEffect(link?.token, screen, familyTab) {
+                val token = link?.token
+                if (token == null || screen != Screen.FAMILY || familyTab != 2) return@LaunchedEffect
+                try {
+                    val list = api.familyPhotos(token); familyPhotos = list
+                    for (ph in list) if (ph.id !in photoCache) {
+                        val bytes = api.photoBytes(token, ph.id)
+                        val options = BitmapFactory.Options().apply { inSampleSize = 2 }
+                        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)?.let { photoCache[ph.id] = it.asImageBitmap() }
+                    }
+                } catch (e: CancellationException) { throw e } catch (_: Exception) { if (familyPhotos == null) familyPhotos = emptyList(); error = "사진을 불러오지 못했어요. 탭을 다시 눌러 주세요." }
             }
             LaunchedEffect(notice) { if (notice.isNotBlank()) { delay(5000); notice = "" } }
 
@@ -292,21 +294,23 @@ class MainActivity : ComponentActivity() {
             val zoom = (LocalConfiguration.current.screenWidthDp / 1280f).coerceIn(1f, 1.6f)
             CompositionLocalProvider(LocalDensity provides Density(base.density * zoom, base.fontScale)) {
             Box(Modifier.fillMaxSize().background(Color(0xFFE4DCD3))) {
-                FamilyMap(mapPoints, mapStops, parked, Modifier.fillMaxSize())
+                FamilyMap(mapPoints, mapStops, parked, Modifier.fillMaxSize(), position)
                 val token = link?.token
                 Row(Modifier.fillMaxSize()) {
                     // ── 왼쪽 메뉴 ──
                     Column(Modifier.fillMaxHeight().width(124.dp).background(CarColors.Navy).padding(vertical = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Image(painterResource(R.drawable.ic_app_brand), contentDescription = "아빠어디가", modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
+                        Image(painterResource(R.drawable.ic_app_brand), contentDescription = "여기들렀다가", modifier = Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)))
                         Spacer(Modifier.height(6.dp))
                         NavItem(R.drawable.ic_nav_map, "지도", screen == Screen.MAP) { screen = Screen.MAP; error = "" }
                         NavItem(R.drawable.ic_nav_search, "목적지", screen == Screen.SEARCH, enabled = parked) { openSearch() }
                         if (token != null) NavItem(R.drawable.ic_flag, "가족 여행", screen == Screen.TRIPS, enabled = parked, badge = trip?.ideas?.count { it.status == "PROPOSED" } ?: 0) { screen = Screen.TRIPS; error = ""; results = emptyList() }
                         NavItem(R.drawable.ic_nav_family, "가족", screen == Screen.FAMILY, enabled = parked) { screen = Screen.FAMILY; error = "" }
+                        NavItem(R.drawable.ic_nav_settings, "차량 설정", screen == Screen.SETTINGS, enabled = parked) { screen = Screen.SETTINGS; error = "" }
                     }
                     Box(Modifier.weight(1f).fillMaxHeight()) {
                         when (screen) {
                             Screen.MAP -> {
+                                if (doorStatus.openCount > 0) Card { T("문이 열려 있어요. 출발 전 확인해 주세요", 22, FontWeight.Bold, CarColors.WarmInk) }
                                 val t = trip
                                 Column(Modifier.align(Alignment.TopStart).padding(18.dp).width(460.dp).heightIn(max = 670.dp).background(CarColors.Navy, RoundedCornerShape(24.dp)).padding(22.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     if (shownSolo != null) {
@@ -399,7 +403,7 @@ class MainActivity : ComponentActivity() {
                                             }, 21, FontWeight.Bold, CarColors.OnNavySub)
                                             if (parked) {
                                                 // 들르는 곳마다 누가 왜 가고 싶어 했는지 함께 보여 준다(추천 코스나 차에서 바로 넣은 곳은 이름만).
-                                                val stopNotes = t.stops.map { p -> if (p.reason.startsWith("추천 코스") || p.reason.endsWith("추가한 경유지")) "" else "${p.byName}님" + (if (p.reason.isNotBlank()) " · ${p.reason}" else "") }
+                                                val stopNotes = t.stops.map { p -> if (p.reason.startsWith("추천 코스") || p.reason.endsWith("추가한 경유지")) "" else "${p.byName}님이 담은 곳" }
                                                 StopList(t.stops.map { (if (it.status == "VISITED") "✓ " else "") + it.place.name } + listOfNotNull(t.destination?.name), onNavy = true, notes = stopNotes)
                                                 val next = t.stops.firstOrNull { it.status != "VISITED" }
                                                 val needsDestination = t.status == "PLANNING" && t.destination == null && pending.isEmpty()
@@ -424,7 +428,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                     CarButton(if (needsDestination) "목적지 정하기" else "코스 편집", Modifier.weight(1f), if (needsDestination) Btn.OnNavyStrong else Btn.OnNavy, enabled = !busy) {
-                                                        tripsTab = if (pending.isNotEmpty()) 0 else if (t.destination == null) 2 else 1
+                                                        tripsTab = if (t.destination == null) 2 else 1
                                                         showCreateTrip = false; screen = Screen.TRIPS; error = ""; results = emptyList(); query = ""
                                                     }
                                                     // 취소: 출발 뒤에는 마치기·출발 취소를, 출발 전에는 코스 비우기·여행방 지우기를 고른다.
@@ -447,12 +451,13 @@ class MainActivity : ComponentActivity() {
                                         if (parked) {
                                             Tag("${p.byName.take(12)}님의 새 제안")
                                             T(p.place.name, 26, FontWeight.Black, maxLines = 1)
+                                            position?.let { T("차량에서 직선거리 약 ${"%.1f".format(it.distanceKmTo(p.place))}km", 19, color = CarColors.Sub) }
                                             if (p.reason.isNotBlank()) T("“${p.reason}”", 18, color = CarColors.Sub, maxLines = 2)
                                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                                 CarButton(if (p.kind == "DESTINATION") "목적지로 정하기" else "경로에 담기", Modifier.weight(1.4f), enabled = !busy) { run { trip = api.decide(token, p.id, true); incoming = null; updateSolo(null); notice = "${p.place.name} · 경로에 담았어요." } }
                                                 CarButton("나중에 보기", Modifier.weight(1f), Btn.Soft) { incoming = null }
                                             }
-                                        } else T("가족 제안이 도착했어요 · 정차 후 확인", 24, FontWeight.Bold, maxLines = 1)
+                                        } else T("${p.byName.take(8)}님 · ${p.place.name}\n" + (position?.let { "직선 약 ${"%.1f".format(it.distanceKmTo(p.place))}km · " } ?: "") + "정차 후 확인", 24, FontWeight.Bold, maxLines = 2)
                                     }
                                 }
                             }
@@ -478,7 +483,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }) {
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                    Tag(if (course.kind == "REFERENCE") "참고 코스" else "가족이 올린 코스")
+                                                    Tag(if (course.kind == "REFERENCE") "지자체 추천" else "가족이 올린 코스")
                                                     if (course.trending) Tag("요즘 인기", CarColors.OkBg, CarColors.Ok)
                                                 }
                                                 T(course.title, 24, FontWeight.Bold, maxLines = 1)
@@ -488,7 +493,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     } else {
                                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                            Tag(if (c.kind == "REFERENCE") "참고 코스" else "가족이 올린 코스")
+                                            Tag(if (c.kind == "REFERENCE") "지자체 추천" else "가족이 올린 코스")
                                             if (c.trending) Tag("요즘 인기", CarColors.OkBg, CarColors.Ok)
                                             Spacer(Modifier.weight(1f))
                                             CarButton("목록으로", kind = Btn.Soft) { openCourse = null; courseAddingStop = false }
@@ -562,7 +567,7 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                         }
-                                        T("좋아요 ${c.likes}" + (if (c.reviewCount > 0) " · 후기 ${c.reviewCount} · ★ ${c.rating}" else "") + (c.sourceName?.let { " · 참고: $it" } ?: ""), 17, color = CarColors.Sub, maxLines = 1)
+                                        T("좋아요 ${c.likes}" + (if (c.reviewCount > 0) " · 후기 ${c.reviewCount} · ★ ${c.rating}" else "") + (c.sourceName?.let { " · 출처: $it" } ?: ""), 17, color = CarColors.Sub, maxLines = 1)
                                         CarButton(if (busy) "길 찾는 중" else "이 코스로 안내 시작", Modifier.fillMaxWidth(), enabled = !busy, icon = R.drawable.ic_flag) {
                                             run {
                                                 updateSolo(SoloDrive(c.destination, api.soloRoute(c.destination, courseDraftStops), courseDraftStops, c.title))
@@ -655,7 +660,7 @@ class MainActivity : ComponentActivity() {
                                 if (token != null && trip?.status == "PLANNING") T("가족 여행의 경유지·목적지를 바꾸려면 ‘가족 여행’ 메뉴를 써 주세요.", 17, color = CarColors.Sub)
                             }
                             Screen.TRIPS -> if (token != null) SidePanel(trip?.title ?: "가족 여행", error, { screen = Screen.MAP }, Modifier.fillMaxWidth(.66f)) {
-                                val active = trips.filter { it.status != "DONE" }
+                                val listedTrips = trips
                                 val t = trip
                                 val pending = t?.ideas?.filter { it.status == "PROPOSED" }.orEmpty()
                                 // 고른 여행이 없거나 새로 만드는 중이면 '여행 목록'만 보여 준다.
@@ -709,6 +714,9 @@ class MainActivity : ComponentActivity() {
                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                                     Tag("도착지")
                                                     T(d.name, 22, FontWeight.Bold, modifier = Modifier.weight(1f), maxLines = 1)
+                                                    if (t.status != "DONE") CarButton("도착지 바꾸기", kind = Btn.Soft, enabled = !busy) {
+                                                        tripSearchKind = "DESTINATION"; tripsTab = 2; results = emptyList(); query = ""; error = ""
+                                                    }
                                                 }
                                             }
                                         }
@@ -739,14 +747,14 @@ class MainActivity : ComponentActivity() {
                                                     } else {
                                                         CarButton("목적지로 정하기", enabled = !busy) {
                                                             if (t.destination != null) pendingDestination = place
-                                                            else run { trip = api.setDestination(token, t.id, place); updateSolo(null); results = emptyList(); query = ""; notice = "목적지를 ${place.name}(으)로 정했어요." }
+                                                            else run { trip = api.setDestination(token, t.id, place); updateSolo(null); tripsTab = 1; results = emptyList(); query = ""; notice = "목적지를 ${place.name}(으)로 정했어요." }
                                                         }
                                                     }
                                                 }
                                             }
                                         }
                                     }
-                                    showCreateTrip || active.isEmpty() -> {
+                                    showCreateTrip || listedTrips.isEmpty() -> {
                                         Card {
                                             T("새 가족 여행방", 24, FontWeight.Black)
                                             T("만든 뒤 가족이 QR로 들어와 가고 싶은 곳을 제안할 수 있어요.", 18, color = CarColors.Sub)
@@ -761,10 +769,10 @@ class MainActivity : ComponentActivity() {
                                                 }
                                             }
                                         }
-                                        if (active.isNotEmpty()) CarButton("여행 목록으로", Modifier.fillMaxWidth(), Btn.Soft) { showCreateTrip = false }
+                                        if (listedTrips.isNotEmpty()) CarButton("여행 목록으로", Modifier.fillMaxWidth(), Btn.Soft) { showCreateTrip = false }
                                     }
                                     else -> {
-                                        active.forEach { s ->
+                                        listedTrips.forEach { s ->
                                             Card {
                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -776,7 +784,8 @@ class MainActivity : ComponentActivity() {
                                                         T(s.title, 24, FontWeight.Bold, maxLines = 1)
                                                         T("${s.date ?: "날짜 미정"} · ${s.destination?.name ?: "목적지 미정"} · 들르는 곳 ${s.stopCount}", 17, color = CarColors.Sub, maxLines = 1)
                                                     }
-                                                    if (s.id != tripId || solo != null) CarButton("이 여행 안내", kind = Btn.Soft) { select(s.id) }
+                                                    if (s.status != "DONE" && (s.id != tripId || solo != null)) CarButton("이 여행 안내", kind = Btn.Soft) { select(s.id) }
+                                                    if (s.canManage) CarButton("여행 삭제", kind = Btn.Danger, enabled = !busy) { pendingDeleteTrip = token to s }
                                                 }
                                             }
                                         }
@@ -784,7 +793,33 @@ class MainActivity : ComponentActivity() {
                                     }
                                 }
                             }
-                            Screen.FAMILY -> if (token == null) SidePanel("가족 연결", error, { screen = Screen.MAP }, Modifier.fillMaxWidth(.64f)) {
+                            Screen.SETTINGS -> SidePanel("차량 연결과 안내", error, { screen = Screen.MAP }, Modifier.fillMaxWidth(.64f)) {
+                                Card {
+                                    T("현재 위치로 길찾기", 25, FontWeight.Black)
+                                    T(originLabel, 20, color = CarColors.Ink)
+                                    T(locationStatus, 18, color = CarColors.Sub)
+                                    T("허용하면 새 길찾기와 가족 여행 출발에 차량 위치를 사용해요. 이동 이력은 수집하지 않아요.", 19, color = CarColors.Sub)
+                                    CarButton("차량 위치 사용", Modifier.fillMaxWidth(), icon = R.drawable.ic_nav_map) {
+                                        if (vehicleLocation.hasPermission()) vehicleLocation.start()
+                                        else locationPermission.launch(PleosVehicleLocation.PERMISSION)
+                                    }
+                                }
+                                Card {
+                                    T("가족의 이야기를 음성으로", 25, FontWeight.Black)
+                                    T(speechStatus, 19, color = CarColors.Sub)
+                                    CarButton("안내 음성 들어보기", Modifier.fillMaxWidth(), Btn.Soft) { tts.speak("여기들렀다가와 함께 가족의 바람을 모아 여행을 시작해 보세요.") }
+                                }
+                                Card {
+                                    T("출발 전 문 확인", 25, FontWeight.Black)
+                                    T(doorStatus.label, 20, color = CarColors.Ink)
+                                    T("차량에서 알려 준 문 상태예요. 출발 전에는 직접 한 번 더 확인해 주세요.", 19, color = CarColors.Sub)
+                                }
+                            }
+                            Screen.FAMILY -> if (token == null || addingFamily) SidePanel("가족 연결", error, { addingFamily = false; screen = Screen.MAP }, Modifier.fillMaxWidth(.64f)) {
+                                if (savedLinks.isNotEmpty()) {
+                                    T("연결한 가족방", 23, FontWeight.Bold)
+                                    savedLinks.forEach { saved -> CarButton(saved.familyName, Modifier.fillMaxWidth(), Btn.Soft, enabled = !busy) { switchFamily(saved) } }
+                                }
                                 Segmented(listOf("새 가족방 만들기", "코드로 연결"), joinTab) { i -> joinTab = i; error = "" }
                                 if (joinTab == 0) Card {
                                     // ── 방법 1: 차량에서 바로 가족방 만들기 + QR 초대 ──
@@ -794,11 +829,16 @@ class MainActivity : ComponentActivity() {
                                         TextInput(newFamilyName, { v -> newFamilyName = v.take(30) }, "예: 우리 가족", "가족방 이름 입력", Modifier.weight(1.2f), 22)
                                         TextInput(carName, { v -> carName = v.take(20) }, "예: 아빠 차", "차량 이름 입력", Modifier.weight(1f), 22)
                                     }
-                                    CarButton(if (busy) "만드는 중" else "가족방 만들기", Modifier.fillMaxWidth(), enabled = !busy && newFamilyName.isNotBlank()) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        TextInput(newFamilyPin, { v -> newFamilyPin = v.filter(Char::isDigit).take(6) }, "비밀번호 숫자 6자리", "가족방 비밀번호 숫자 6자리 입력", Modifier.weight(1f), 22, numeric = true)
+                                        T("가족이 처음 들어올 때\n한 번 물어봐요", 17, color = CarColors.Sub, modifier = Modifier.weight(1f))
+                                    }
+                                    CarButton(if (busy) "만드는 중" else "가족방 만들기", Modifier.fillMaxWidth(), enabled = !busy && newFamilyName.isNotBlank() && newFamilyPin.length == 6) {
                                         run {
-                                            val (tk, info) = api.createFamily(newFamilyName.ifBlank { "우리 가족" }, carName.ifBlank { "우리 차" })
+                                            val (tk, info) = api.createFamily(newFamilyName.ifBlank { "우리 가족" }, carName.ifBlank { "우리 차" }, newFamilyPin)
+                                            newFamilyPin = ""
                                             val saved = SavedLink(tk, info.familyName, info.vehicleName)
-                                            linkStore.save(saved); family = info; code = ""; link = saved; familyTab = 0
+                                            activateFamily(saved, info)
                                             phoneOrigin = api.phoneAppOrigin()
                                             notice = "‘${info.familyName}’ 가족방을 만들었어요. QR로 가족을 초대해 보세요."
                                         }
@@ -815,14 +855,21 @@ class MainActivity : ComponentActivity() {
                                         run {
                                             val (tk, info) = api.pair(code, carName.ifBlank { "우리 차" })
                                             val saved = SavedLink(tk, info.familyName, info.vehicleName)
-                                            linkStore.save(saved); family = info; code = ""; link = saved; screen = Screen.MAP
+                                            activateFamily(saved, info); screen = Screen.MAP
                                             notice = "‘${info.familyName}’ 가족과 연결했어요."
                                         }
                                     }
                                 }
                             } else SidePanel(family?.familyName ?: "가족", error, { screen = Screen.MAP }, Modifier.fillMaxWidth(.64f)) {
                                 val members = family?.members.orEmpty()
-                                Segmented(listOf("초대 QR", "구성원 ${members.size}명", "이 차"), familyTab) { i -> familyTab = i; confirmUnpair = false; error = "" }
+                                Card {
+                                    T("가족방 전환", 23, FontWeight.Bold)
+                                    savedLinks.filterNot { it.token == token }.forEach { saved ->
+                                        CarButton(saved.familyName, Modifier.fillMaxWidth(), Btn.Soft, enabled = !busy) { switchFamily(saved) }
+                                    }
+                                    CarButton("다른 가족방 연결 · 새 가족방 만들기", Modifier.fillMaxWidth(), Btn.Line, enabled = !busy) { addingFamily = true; joinTab = 1; code = ""; openPhoto = null; photoCache.clear(); familyPhotos = null }
+                                }
+                                Segmented(listOf("초대 QR", "구성원 ${members.size}명", "사진", "이 차"), familyTab) { i -> familyTab = i; confirmUnpair = false; error = "" }
                                 when (familyTab) {
                                     0 -> {
                                         val inviteCode = family?.inviteCode.orEmpty()
@@ -834,6 +881,7 @@ class MainActivity : ComponentActivity() {
                                                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                                     T("휴대폰 카메라로 찍으면 바로 들어와요", 24, FontWeight.Black)
                                                     if (inviteCode.isNotBlank()) T("초대 코드 · ${inviteCode.take(4)} ${inviteCode.drop(4)}", 22, FontWeight.Bold, CarColors.Teal)
+                                                    if (family?.hasPin == true) T("들어올 때 가족방 비밀번호 6자리를 물어봐요", 17, color = CarColors.Sub)
                                                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                                         CarButton("크게 보기", Modifier.weight(1f), Btn.Primary) { showQrDialog = true }
                                                         CarButton(if (busy) "발급 중" else "새로 발급", Modifier.weight(1f), Btn.Soft, enabled = !busy) {
@@ -852,10 +900,32 @@ class MainActivity : ComponentActivity() {
                                         if (members.isEmpty()) T("아직 휴대폰으로 들어온 가족이 없어요. 처음 들어온 사람이 가족방 관리자가 돼요.", 19, color = CarColors.Sub)
                                         members.forEach { m -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) { T(m.name, 22, FontWeight.Medium); if (m.role == "ADMIN") Tag("관리자") } }
                                     }
+                                    2 -> {
+                                        val list = familyPhotos
+                                        when {
+                                            list == null -> T("사진을 불러오는 중이에요.", 19, color = CarColors.Sub)
+                                            list.isEmpty() -> T("아직 가족방에 올라온 사진이 없어요. 가족이 휴대폰에서 여행 사진을 올리면 여기에 모여요.", 19, color = CarColors.Sub)
+                                        }
+                                        list?.chunked(3)?.forEach { rowPhotos ->
+                                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                rowPhotos.forEach { ph ->
+                                                    Box(Modifier.weight(1f).aspectRatio(4f / 3f).clip(RoundedCornerShape(16.dp)).background(Color(0xFFDDE4EA)).clickable { openPhoto = ph }, contentAlignment = Alignment.Center) {
+                                                        val bmp = photoCache[ph.id]
+                                                        if (bmp != null) Image(bmp, contentDescription = "${ph.byName}님이 올린 사진", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                                        else T("불러오는 중", 16, color = CarColors.Sub)
+                                                    }
+                                                }
+                                                repeat(3 - rowPhotos.size) { Spacer(Modifier.weight(1f)) }
+                                            }
+                                        }
+                                    }
                                     else -> {
                                         Card {
                                             T(family?.vehicleName ?: link?.vehicleName ?: "", 24, FontWeight.Black)
                                             T(originLabel, 17, color = CarColors.Sub)
+                                            T(locationStatus, 17, color = CarColors.Sub)
+                                            T(doorStatus.label, 17, color = CarColors.Sub)
+                                            T(speechStatus, 17, color = CarColors.Sub)
                                         }
                                         if (!confirmUnpair) CarButton("가족 연결 끊기", Modifier.fillMaxWidth(), Btn.Line) { confirmUnpair = true }
                                         else Card {
@@ -884,17 +954,24 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                     T("${a.place.name}에 도착했어요", 30, FontWeight.Black)
-                    if (a.stories.isEmpty()) T("남겨진 이야기가 없어요.", 20, color = CarColors.Sub)
                     a.stories.forEach { s ->
                         Card {
-                            T("${s.by}님의 이야기", 21, FontWeight.Bold)
-                            if (s.reason.isNotBlank()) T("가고 싶었던 이유 · ${s.reason}", 20, color = CarColors.Ink)
+                            T("${s.by}님이 가고 싶어 한 곳", 21, FontWeight.Bold)
                             if (s.message.isNotBlank()) T("가족에게 · ${s.message}", 20, color = CarColors.Ink)
                             s.comments.take(2).forEach { c -> T(c, 17, color = CarColors.Sub, maxLines = 1) }
                         }
                     }
-                    T("사진은 가족이 휴대폰에서 이 장소에 올릴 수 있어요.", 17, color = CarColors.Sub)
+                    T("여기서 찍은 사진을 휴대폰으로 올리면 차의 ‘가족 › 사진’에서 함께 볼 수 있어요.", 17, color = CarColors.Sub)
                     CarButton("확인", Modifier.fillMaxWidth()) { tts.stop(); arrival = null }
+                }
+                // ── 가족방 사진 크게 보기 ──
+                val shownPhoto = openPhoto
+                if (shownPhoto != null && parked) CenterDialog {
+                    val bmp = photoCache[shownPhoto.id]
+                    if (bmp != null) Image(bmp, contentDescription = "${shownPhoto.byName}님이 올린 사진", modifier = Modifier.fillMaxWidth().heightIn(max = 430.dp).clip(RoundedCornerShape(16.dp)), contentScale = ContentScale.Fit)
+                    T(listOf("${shownPhoto.byName}님", shownPhoto.tripTitle, shownPhoto.placeName).filter { it.isNotBlank() }.joinToString(" · "), 20, FontWeight.Bold, maxLines = 1)
+                    if (shownPhoto.caption.isNotBlank()) T(shownPhoto.caption, 19, color = CarColors.Ink, maxLines = 2)
+                    CarButton("닫기", Modifier.fillMaxWidth()) { openPhoto = null }
                 }
                 val tk = link?.token
                 val current = trip
@@ -925,6 +1002,24 @@ class MainActivity : ComponentActivity() {
                         CarButton("닫기", Modifier.weight(1f), Btn.Primary) { showQrDialog = false }
                     }
                 }
+                val deleteTarget = pendingDeleteTrip
+                if (deleteTarget != null && parked && deleteTarget.first == tk) CenterDialog {
+                    val target = deleteTarget.second
+                    T("여행을 삭제할까요?", 30, FontWeight.Black)
+                    T("‘${target.title}’ 여행과 그 안의 제안·사진이 가족 모두의 화면에서 지워져요. 되돌릴 수 없어요.", 20, color = CarColors.Ink)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CarButton("취소", Modifier.weight(1f), Btn.Soft, enabled = !busy) { pendingDeleteTrip = null }
+                        CarButton("여행 삭제", Modifier.weight(1f), Btn.Danger, enabled = !busy) {
+                            run {
+                                api.deleteTrip(deleteTarget.first, target.id)
+                                if (tripId == target.id) { trip = null; updateTripId(null); incoming = null; arrival = null }
+                                photoCache.clear(); openPhoto = null; familyPhotos = null
+                                pendingDeleteTrip = null; trips = api.trips(deleteTarget.first)
+                                tripsTab = 3; notice = "여행을 삭제했어요."
+                            }
+                        }
+                    }
+                }
                 if (confirmFinish && parked && tk != null && current != null) CenterDialog {
                     T("여행을 끝낼까요?", 30, FontWeight.Black)
                     T("마치면 가족의 추억 앨범에 담겨요. 잘못 출발했다면 출발만 취소해 준비 중으로 되돌릴 수 있어요.", 20, color = CarColors.Sub)
@@ -949,7 +1044,7 @@ class MainActivity : ComponentActivity() {
                     T("가족 여행의 목적지가 ${place.name}(으)로 바뀌고 경로를 다시 찾아요. 들르는 곳은 그대로예요.", 20, color = CarColors.Ink)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         CarButton("그대로 두기", Modifier.weight(1.3f)) { pendingDestination = null }
-                        CarButton("바꾸기", Modifier.weight(1f), Btn.Danger) { pendingDestination = null; run { trip = api.setDestination(tk, current.id, place); updateSolo(null); results = emptyList(); query = ""; notice = "목적지를 ${place.name}(으)로 바꿨어요." } }
+                        CarButton("바꾸기", Modifier.weight(1f), Btn.Danger) { pendingDestination = null; run { trip = api.setDestination(tk, current.id, place); updateSolo(null); tripsTab = 1; results = emptyList(); query = ""; notice = "목적지를 ${place.name}(으)로 바꿨어요." } }
                     }
                 }
             }
@@ -961,7 +1056,7 @@ class MainActivity : ComponentActivity() {
 private fun statusLabel(s: String) = when (s) { "ONGOING" -> "여행 중"; "DONE" -> "다녀옴"; else -> "준비 중" }
 private fun formatMinutes(minutes: Int) = if (minutes >= 60) "${minutes / 60}시간 ${minutes % 60}분" else "${minutes}분"
 
-@Composable private fun FamilyMap(pointsJson: String?, stopsJson: String, parked: Boolean, modifier: Modifier) {
+@Composable private fun FamilyMap(pointsJson: String?, stopsJson: String, parked: Boolean, modifier: Modifier, position: VehiclePosition? = null) {
     var loaded by remember { mutableStateOf(false) }
     AndroidView(modifier = modifier, factory = { context ->
         WebView(context).apply {
@@ -979,6 +1074,8 @@ private fun formatMinutes(minutes: Int) = if (minutes >= 60) "${minutes / 60}시
             val h = (web.height / web.resources.displayMetrics.density).toInt(); if (h > 0) web.evaluateJavascript("window.resizeMap($h)", null)
             // 주행 중에는 지도를 끌거나 확대할 수 없게 잠근다.
             web.evaluateJavascript("window.setLocked(${!parked})", null)
+            val locationJson = position?.let { "[${it.latitude},${it.longitude}]" } ?: "null"
+            web.evaluateJavascript("window.showVehicle($locationJson)", null)
             if (pointsJson != null) web.evaluateJavascript("window.showRoute(JSON.parse(${JSONObject.quote(pointsJson)}),JSON.parse(${JSONObject.quote(stopsJson)}))", null)
             else web.evaluateJavascript("window.clearRoute()", null)
         }
